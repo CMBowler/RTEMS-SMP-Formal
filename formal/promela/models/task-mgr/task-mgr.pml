@@ -68,10 +68,11 @@
 
 
 // We use two semaphores to synchronise the tasks
-#define SEMA_MAX 2
+#define SEMA_MAX 3
 
 #define SEMA_TASKCONTROL 0
 #define SEMA_CREATEDELETE 1
+#define SEMA_TASK_START_0 2
 
 /* The following inlines are not given here as atomic,
  * but are intended to be used in an atomic context.
@@ -153,7 +154,7 @@ typedef Task {
   int start;    // Starting address
   byte nodeid;  // So we can spot remote calls
   byte pmlid;   // Promela process id
-  mtype state ; // {Ready,EventWait,TickWait,OtherWait}
+  mtype state = non ; // {Ready,EventWait,TickWait,OtherWait}
   Mode mode;    // Contains information about the task mode.
   byte prio ;   // lower number is higher priority
   int ticks;    //
@@ -240,10 +241,10 @@ inline task_create(nid, prio, preempt, tid, rc) {
 //*/
 
 ///*
-inline task_start(self, tid, entry, arg, rc) {
+inline task_start(tid, entry, rc) {
     atomic {
         if
-        ::  task[tid].state == non ->
+        ::  tasks[tid].state == non ->
                 printf("@@@ %d LOG Start NULL out.\n",_pid);
                 rc = RC_InvId;
         ::  else ->
@@ -251,7 +252,9 @@ inline task_start(self, tid, entry, arg, rc) {
             ::  entry == 0 -> RC_InvId
             ::  else ->
                 tasks[tid].state = ready;
-                task[tid].start = entry;
+                tasks[tid].start = entry;
+                // Start Task Model
+                Release(entry);
                 rc = RC_OK;
             fi
         fi
@@ -337,10 +340,12 @@ inline task_delete(tid, rc) {
 //mtype = {Resume, Suspend, ResSpnd, SpndRes, ResRes, SpndSpnd}
 
 bool name;
-bool createTask, deleteTask;
+bool createTask, deleteTask, startTask;
+
 byte deleteId, insertId;
-byte createPrio;
-mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, MultiCore}
+byte createPrio, taskEntry;
+
+mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, MultiCore}
 mtype scenario;
 
 inline chooseScenario() {
@@ -350,19 +355,25 @@ inline chooseScenario() {
     name = true;
     createTask = true;
     deleteTask = true;
+    startTask = false;
+    taskEntry = SEMA_TASK_START_0;
 
     if
     ::  scenario = CreateAndDestroy;
     ::  scenario = TooMany;
     ::  scenario = Invalid;
     ::  scenario = ISRctx;
+    ::  scenario = InvEntry;
     fi
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
 
     if
+    ::  scenario == CreateAndDestroy ->
+            startTask = true;
     ::  scenario == TooMany ->
             task_control = 0;
             deleteTask = false;
+            startTask = false;
     ::  scenario == Invalid ->
             if
             ::  name = false;
@@ -372,6 +383,8 @@ inline chooseScenario() {
             fi
     ::  scenario == ISRctx ->
             skip;
+    ::  scenario == InvEntry ->
+            taskEntry = 0;
     ::  else    // go with defaults
     fi
 }
@@ -439,7 +452,7 @@ proctype System () {
       }
 */
       if
-      :: tasks[taskid].state == Zombie -> taskid++
+      :: tasks[taskid].state == non -> taskid++
       :: else ->
          if
          ::  tasks[taskid].state == OtherWait
@@ -506,6 +519,7 @@ stopped:
 
 proctype Creator(byte nid) {
     byte createRC;
+    byte startRC;
     /*
     if
     :: multicore ->
@@ -517,12 +531,18 @@ proctype Creator(byte nid) {
 
     byte prio = DEFUALT_PRIO;
     byte preempt = true;
+    byte task_entry = taskEntry;
+
     if 
     ::  createTask == true ->
         task_create(nid, prio, preempt, insertId, createRC);
+        if 
+        ::  createRC == RC_OK ->
+                task_start(insertId, task_entry, startRC);
+        ::  else -> skip
+        fi
     ::  else
     fi
-    Release(SEMA_CREATEDELETE);
 
     printf("@@@ %d SCALAR createRC %d\n",_pid,createRC);
 
@@ -557,6 +577,28 @@ proctype Destroyer(byte delId) {
     printf("@@@ %d SCALAR createRC %d\n",_pid,deleteRC);
 }
 
+// global task variables
+
+byte x = 0;
+
+proctype Task0() {
+    if
+    ::  startTask == true ->
+            Obtain(SEMA_TASK_START_0);
+
+            x = x + 1;
+
+            printf("%d\n", x);
+
+            // Release Semaphores
+            Release(SEMA_TASK_START_0);
+    ::  else -> skip
+    fi
+
+    Release(SEMA_CREATEDELETE);
+
+}
+
 init {
   pid nr;
 
@@ -578,6 +620,8 @@ init {
   run Clock();
 
   Released(SEMA_TASKCONTROL);
+
+  run Task0();
 
   run Creator(0);
   run Destroyer(0);
