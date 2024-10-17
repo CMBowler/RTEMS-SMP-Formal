@@ -82,7 +82,7 @@ task_start: |
 task_delete: |
   T_log( T_NORMAL, "Deleting Task(%d)", {0}, {1} );
   {1} = ( *ctx->t_delete)( taskID[{0}] );
-  T_log( T_NORMAL, "Returned 0x%x from Start", {1} );
+  T_log( T_NORMAL, "Returned 0x%x from Delete", {1} );
 
 createRC: |
   T_rsc( createRC, {0} );

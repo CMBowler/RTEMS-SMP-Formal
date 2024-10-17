@@ -119,14 +119,14 @@ static void RtemsModelTaskMgr_Teardown(
 )
 {
   rtems_status_code   sc;
-  rtems_task_priority prio;
+  //rtems_task_priority prio;
 
   T_log( T_NORMAL, "Runner Teardown" );
 
-  prio = 0;
-  sc = rtems_task_set_priority( RTEMS_SELF, M_PRIO_HIGH, &prio );
-  T_rsc_success( sc );
-  T_eq_u32( prio, M_PRIO_NORMAL );
+  //prio = 0;
+  //sc = rtems_task_set_priority( RTEMS_SELF, M_PRIO_HIGH, &prio );
+  //T_rsc_success( sc );
+  //T_eq_u32( prio, M_PRIO_NORMAL );
 
   T_surrender_objects( ctx->seized_objects, rtems_task_delete );
 

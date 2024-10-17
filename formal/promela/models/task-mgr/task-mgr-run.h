@@ -8,7 +8,7 @@ static void Worker{0}( rtems_task_argument arg )
   ctx = (Context *) arg;
 
   T_log( T_NORMAL, "Worker Running" );
-  TestSegment3( ctx );
+  TestSegment2( ctx );
   T_log( T_NORMAL, "Worker finished" );
 
   // (void) rtems_task_suspend( RTEMS_SELF );
@@ -130,9 +130,7 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->receive_timeout = RTEMS_NO_TIMEOUT;
   ctx->unsatisfied_pending = 0xffffffff;
   memset( &ctx->thread_switch_log, 0, sizeof( ctx->thread_switch_log ) );
-  T_log( T_NORMAL, "Test - Probe" );
   //T_eq_u32( GetPending( ctx ), 0 );
-  T_log( T_NORMAL, "Test - Probe" );
   _Thread_Wait_flags_set( ctx->runner_thread, THREAD_WAIT_CLASS_PERIOD );
 
   TestSegment0( ctx );

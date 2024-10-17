@@ -68,9 +68,10 @@
 // We use two semaphores to synchronise the tasks
 #define SEMA_MAX 3
 
-#define SEMA_TASKCONTROL 	(0)
+#define SEMA_CREATEDELETE 	(0)
 #define SEMA_TASK_START_0 	(1)
-#define SEMA_CREATEDELETE 	(2)
+//#define SEMA_TASKCONTROL 	(2)
+
 
 // System
 #define TIMOUT_VAL 100
@@ -220,10 +221,10 @@ inline isNameValid(name, rc) {
 
 inline setTask(tid, rc) {
     byte raw_tid;
-    Obtain(SEMA_TASKCONTROL);
+    //Obtain(SEMA_TASKCONTROL);
     raw_tid = task_control & (~task_control + 1);
     task_control = task_control - raw_tid;
-    Release(SEMA_TASKCONTROL);
+    //Release(SEMA_TASKCONTROL);
     rc = true;
     if
     ::  raw_tid == 2 ->
@@ -335,7 +336,7 @@ inline task_resume(self, tid, rc) {
 
 inline removeTask(tid, rc) {
     byte raw_tid = 1 << tid;
-    Obtain(SEMA_TASKCONTROL);
+    //Obtain(SEMA_TASKCONTROL);
     if
     ::  (task_control & raw_tid) != raw_tid ->
             task_control = task_control + raw_tid;
@@ -343,7 +344,7 @@ inline removeTask(tid, rc) {
     ::  (task_control & raw_tid) == raw_tid ->
             rc = false;
     fi
-    Release(SEMA_TASKCONTROL);
+    //Release(SEMA_TASKCONTROL);
 }
 
 ///*
@@ -667,17 +668,40 @@ repeat_start:
     ::  else
     fi
 
+    if 
+	::	startTask == true ->
+	    	Obtain(SEMA_CREATEDELETE);
+	::	else
+	fi
+
+    if
+    ::  createTask == true ->
+            deleteId = insertId;
+    ::  else
+    fi
+
+    if
+    ::  deleteTask == true -> 
+			printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, deleteId);
+			
+            task_delete(deleteId, deleteRC);
+
+            printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
+    ::  else 
+    fi
+
 }
 
+/*
 proctype Worker(byte delId) {
-    /*
+
     if
     :: multicore ->
         // printf("@@@ %d CALL RunnerScheduler %d\n", _pid, rcvCore);
         printf("@@@ %d CALL SetProcessor %d\n", _pid, rcvCore);
     :: else
     fi
-    */
+
 	if 
 	::	startTask == true ->
 	    	Obtain(SEMA_CREATEDELETE);
@@ -700,6 +724,7 @@ proctype Worker(byte delId) {
     ::  else 
     fi
 }
+*/
 
 // global task variables
 
@@ -739,13 +764,13 @@ init {
 
 	
 	run Runner(0);
-	run Worker(0);
+//	run Worker(0);
 	run Task0();
 
 //	run System();
 //	run Clock();
 
-	Release(SEMA_TASKCONTROL);
+//	Release(SEMA_TASKCONTROL);
 
 	_nr_pr == 1;
 
