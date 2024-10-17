@@ -37,6 +37,9 @@
  */
 
 #include "../common/rtems.pml"
+#define TASK_MAX 4
+#define SEMA_MAX 3
+#include "../common/model.pml"
 
 #define MAX_MODEL_SEMAS 3 // 0 for NULL pointers
 #define NO_TIMEOUT 0
@@ -52,7 +55,7 @@
 #define THIS_CORE 0
 #define THAT_CORE 1
 
-// Wait optionset for semaphore_obtain
+// semWait optionset for semaphore_obtain
 #define RTEMS_WAIT 1
 #define RTEMS_NO_WAIT 0
 
@@ -94,30 +97,21 @@ int task1Core;
 int task2Core;
 int task3Core;
 
-// We envisage three RTEMS tasks involved.
-#define TASK_MAX 4 // These are the "RTEMS" tasks only, numbered 1 & 2 & 3,
-                   // We reserve 0 to model NULL pointers
-
-
-// We use mutexes to synchronise the tasks
-#define SEMA_MAX 3
-
-mtype = {
-// Task states, SemaWait is same as TimeWait but with no timeout
-  Zombie, Ready, SemaWait, TimeWait, OtherWait 
-};
+mtype{ SemaWait } ; // need to know when Blocked on a semaphore
 
 typedef Task {
     byte nodeid; // So we can spot remote calls
     byte pmlid; // Promela process id
     mtype state ; // {Ready,SemaWait,TimeWait,OtherWait}
     bool preemptable;
-    byte taskCeilingPriority; // task's ceiling priority - lower number is higher priority
-    byte initialPriority // task's initial/default priority
-    byte effectivePriority; // task's current active priority
-    bool blocked;
+    byte prio; // lower number is higher priority
     int ticks; // clock ticks to keep track of timeout
     bool tout; // true if woken by a timeout
+    // Semaphore Model Specific?
+    bool blocked;
+    byte taskCeilingPriority; // task's ceiling priority 
+    byte initialPriority // task's initial/default priority
+    byte effectivePriority; // task's current active priority
 };
 
 
@@ -231,48 +225,15 @@ inline outputDefines () {
 /*
  * Running Orders (maintained by simple global sync counter):
  *  Create;;Ident = Semaphore Identified only after creating
- *  Acquire;;Release = Semaphore is acquired and then released
+ *  Acquire;;TestSyncRelease = Semaphore is acquired and then released
  *  Acquire;;Delete = Semaphore is acquired and then deleted
  * Here ;; is "sequential" composition of *different* threads.
  * Additionally task 1 will always create a semaphore before operations
  */
-bool semaphore[SEMA_MAX]; // Mutexes
 
 inline outputDeclarations () {
-  printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
+  printf("@@@ %d DCLARRAY Semaphore test_sync_sema SEMA_MAX\n",_pid);
 }
-
-/*
- * Synchronisation Mechanisms
- *
- *  Obtained(sema_id) - call that waits if sema 
- *   `sema_id` is aquired by someone.
- *  Obtain(sema_id) - obttains sema `sema_id`
- *  Release(sema_id)  - call that releases sema `sema_id`
- *
- * Mutexes:  True means available, False means in use.
- */
-
-inline Obtain(sema_id){
-  atomic{
-    printf("@@@ %d WAIT %d\n",_pid,sema_id);
-    semaphore[sema_id] ;        // wait until available
-    semaphore[sema_id] = false; // set as in use
-    printf("@@@ %d LOG WAIT %d Over\n",_pid,sema_id);
-  }
-}
-
-inline Release(sema_id){
-  atomic{
-    printf("@@@ %d SIGNAL %d\n",_pid,sema_id);
-    semaphore[sema_id] = true ; // release
-  }
-}
-
-
-
-
-inline nl() { printf("\n") } // Useful shorthand
 
 
 /*
@@ -845,9 +806,9 @@ inline set_default_priority_options() {
     task_in[TASK2_ID].semType = BINARY_S;
     task_in[TASK3_ID].semType = BINARY_S;
 
-    task_in[TASK1_ID].Wait = true;
-    task_in[TASK2_ID].Wait = true;
-    task_in[TASK3_ID].Wait = true;
+    task_in[TASK1_ID].semWait = true;
+    task_in[TASK2_ID].semWait = true;
+    task_in[TASK3_ID].semWait = true;
 
     task_in[TASK1_ID].taskPreempt = true;
     task_in[TASK2_ID].taskPreempt = true;
@@ -994,7 +955,7 @@ inline sema_flush(self, sem_id, rc) {
 
  /*
  * Task variants:
- *   Task objectives - semaphore {Create, Acquire, Release, Delete}
+ *   Task objectives - semaphore {Create, Acquire, TestSyncRelease, Delete}
  *   timeout_length in {0,1,2...}
  *   
  * Task Scenarios:
@@ -1016,7 +977,7 @@ typedef TaskInputs {
     byte sName; // Name of semaphore to create or identify
     bool doAcquire; // will task aquire the semaphore
     bool doAcquire2;
-    bool Wait; //Will the task wait to obtain the semaphore
+    bool semWait; //Will the task wait to obtain the semaphore
     byte timeoutLength; // only relevant if doAcquire is true, gives wait time
     bool doDelete; // will task delete the semaphore
     bool doDelete2;
@@ -1053,7 +1014,7 @@ inline assignDefaults(defaults, opts) {
     opts.sName = defaults.sName;
     opts.doAcquire = defaults.doAcquire;
     opts.doAcquire2 = defaults.doAcquire2;
-    opts.Wait = defaults.Wait;
+    opts.semWait = defaults.semWait;
     opts.timeoutLength=defaults.timeoutLength;
     opts.doDelete=defaults.doDelete;
     opts.doDelete2=defaults.doDelete2;
@@ -1101,7 +1062,7 @@ inline chooseScenario() {
     defaults.doAcquire = false;
     defaults.doRelease = false;
     defaults.doRelease2 = false;
-    defaults.Wait = false;
+    defaults.semWait = false;
     defaults.timeoutLength = NO_TIMEOUT;
     defaults.doDelete = false;
     defaults.doDelete2 = false;
@@ -1125,11 +1086,11 @@ inline chooseScenario() {
 
 
     // synchronization semaphore initialization
-    semaphore[0] = false;
+    test_sync_sema[0] = false;
     task1Sema = 0;
-    semaphore[1] = false;
+    test_sync_sema[1] = false;
     task2Sema = 1;
-    semaphore[2] = false;
+    test_sync_sema[2] = false;
     task3Sema = 2;
 
     tasks[TASK1_ID].state = Ready;
@@ -1180,7 +1141,7 @@ inline chooseScenario() {
 
         ::  task_in[TASK2_ID].doAcquire = true;
             task_in[TASK3_ID].doAcquire = true;
-            task_in[TASK3_ID].Wait = true;
+            task_in[TASK3_ID].semWait = true;
             task_in[TASK2_ID].doRelease=true;
             task_in[TASK3_ID].doRelease = false;
             printf( "@@@ %d LOG sub-scenario WAIT no timeout\n", _pid);   
@@ -1188,7 +1149,7 @@ inline chooseScenario() {
 
         ::  task_in[TASK2_ID].doAcquire = true;
             task_in[TASK3_ID].doAcquire = true;
-            task_in[TASK3_ID].Wait = true;
+            task_in[TASK3_ID].semWait = true;
             task_in[TASK3_ID].timeoutLength = 2;
             task_in[TASK2_ID].doRelease=true;
             task_in[TASK3_ID].doRelease = true;
@@ -1196,7 +1157,7 @@ inline chooseScenario() {
 
         ::  task_in[TASK2_ID].doAcquire= true;
             task_in[TASK3_ID].doAcquire = true;
-            task_in[TASK3_ID].Wait = true;
+            task_in[TASK3_ID].semWait = true;
             task_in[TASK2_ID].doRelease= false;
             task_in[TASK3_ID].doRelease = false;
             task_in[TASK2_ID].doFlush= true;
@@ -1229,7 +1190,7 @@ inline chooseScenario() {
         ::  task_in[TASK1_ID].doCreate2 = true;
             task_in[TASK2_ID].doAcquire = true;
             task_in[TASK3_ID].doAcquire = true;
-            task_in[TASK3_ID].Wait = true;
+            task_in[TASK3_ID].semWait = true;
             task_in[TASK2_ID].doRelease=true;
             task_in[TASK3_ID].doRelease = false;
             task_in[TASK2_ID].doAcquire2 = true;
@@ -1441,9 +1402,9 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
     ::  opts.doAcquire -> 
             sem_id=1
             printf("@@@ %d CALL sema_obtain %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);
             printf("@@@ %d SCALAR rc %d\n",_pid, rc);
     ::  else -> skip;
     fi
@@ -1452,9 +1413,9 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
     ::  opts.doAcquire2 -> 
             sem_id=2;
             printf("@@@ %d CALL sema_obtain2 %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);
             printf("@@@ %d SCALAR rc %d\n",_pid, rc);
     ::  else -> skip;
     fi
@@ -1466,14 +1427,14 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
             preemptIfRequired(taskid, TASK2_ID, rc);
             if
             :: rc ->
-                Release(task2Sema);
+                TestSyncRelease(task2Sema);
             :: else ->
                 skip;   
             fi
         }
     :: else -> 
-        Release(task2Sema);
-        Obtain(task1Sema);
+        TestSyncRelease(task2Sema);
+        TestSyncObtain(task1Sema);
     fi
 
 
@@ -1488,8 +1449,8 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
             preemptIfRequired(taskid, TASK3_ID, rc);
             if
             :: rc || model_semaphores[sem_id].LockingProtocol == NO_LOCKING ->
-                Release(task3Sema);
-                Obtain(task1Sema);
+                TestSyncRelease(task3Sema);
+                TestSyncObtain(task1Sema);
             :: else -> 
                 skip;   
             fi
@@ -1504,7 +1465,7 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
             if
             :: opts.doPriorityInversion -> skip;
             :: else -> 
-                Obtain(task1Sema);
+                TestSyncObtain(task1Sema);
             fi
            
             printf("@@@ %d CALL sema_release %d\n", _pid, sem_id);
@@ -1520,7 +1481,7 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
             if
             :: opts.doPriorityInversion -> skip;
             :: else -> 
-                Release(task1Sema);
+                TestSyncRelease(task1Sema);
             fi
     ::  else -> skip;
     fi
@@ -1529,8 +1490,8 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
     if
     ::  opts.doPriorityInversion ->
         atomic {
-            Release(task2Sema);
-            Obtain(task1Sema);
+            TestSyncRelease(task2Sema);
+            TestSyncObtain(task1Sema);
         }
     ::  else -> skip;
     fi 
@@ -1538,7 +1499,7 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
     if
     ::  opts.doRelease2 -> 
             sem_id=2
-            Obtain(task1Sema);
+            TestSyncObtain(task1Sema);
            
             printf("@@@ %d CALL sema_release2 %d\n", _pid, sem_id);
                         /* (self,   sem_id, rc) */
@@ -1549,7 +1510,7 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
             :: else -> skip;
             fi
             printf("@@@ %d SCALAR rc %d\n",_pid, rc);
-            Release(task1Sema);
+            TestSyncRelease(task1Sema);
             
     ::  else -> skip;
     fi
@@ -1584,44 +1545,44 @@ proctype Runner (byte nid, taskid; TaskInputs opts) {
     if 
     ::  opts.doDelete ->
         sem_id=1
-        Obtain(task1Sema);
+        TestSyncObtain(task1Sema);
            
         printf("@@@ %d CALL sema_delete %d\n",_pid, sem_id);
                   /*  (self,   sem_id, rc) */
         sema_delete(taskid, sem_id, rc);
         printf("@@@ %d SCALAR rc %d\n",_pid, rc);
       
-        Release(task1Sema);
+        TestSyncRelease(task1Sema);
     ::  else -> skip
     fi
 
     if 
     ::  opts.doDelete2 ->
         sem_id=2;
-        Obtain(task1Sema);
+        TestSyncObtain(task1Sema);
            
         printf("@@@ %d CALL sema_delete2 %d\n",_pid, sem_id);
                   /*  (self,   sem_id, rc) */
         sema_delete(taskid, sem_id, rc);
         printf("@@@ %d SCALAR rc %d\n",_pid, rc);
       
-        Release(task1Sema);
+        TestSyncRelease(task1Sema);
     ::  else -> skip
     fi
     
     
     if
     ::  opts.doPriorityInversion ->
-        Release(task2Sema);
-        Release(task3Sema);    
+        TestSyncRelease(task2Sema);
+        TestSyncRelease(task3Sema);    
     :: else ->
         // Make sure everyone ran
-        Obtain(task1Sema);
+        TestSyncObtain(task1Sema);
     fi
 
-    // Wait for other tasks to finish
-    Obtain(task2Sema);
-    Obtain(task3Sema);
+    // semWait for other tasks to finish
+    TestSyncObtain(task2Sema);
+    TestSyncObtain(task3Sema);
 
     // If Runner at low priority, now set to medium for teardown.
     if 
@@ -1677,7 +1638,7 @@ proctype Worker0 (byte nid, taskid; TaskInputs opts) {
     //fi
 
 
-    Obtain(task2Sema);
+    TestSyncObtain(task2Sema);
 
     if
     ::  opts.doCreate ->
@@ -1734,31 +1695,31 @@ proctype Worker0 (byte nid, taskid; TaskInputs opts) {
             sem_id=1
             if
             :: opts.doPriorityInversion -> skip;
-            :: else -> Release(task3Sema); 
+            :: else -> TestSyncRelease(task3Sema); 
             fi
             printf("@@@ %d CALL sema_obtain %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);           
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);           
         }
         
         printf("@@@ %d SCALAR rc %d\n",_pid, rc);
-    ::  else -> Release(task3Sema);
+    ::  else -> TestSyncRelease(task3Sema);
     fi
 
     if
     ::  opts.doPriorityInversion ->
         atomic {
             if :: model_semaphores[sem_id].LockingProtocol == CEILING_LOCKING ->
-                Release(task1Sema);
+                TestSyncRelease(task1Sema);
             :: else -> 
-                Release(task1Sema);
-                Obtain(task2Sema);
+                TestSyncRelease(task1Sema);
+                TestSyncObtain(task2Sema);
             fi
         }             
     ::  else -> 
         atomic {
-            Obtain(task2Sema);
+            TestSyncObtain(task2Sema);
         }
     fi
 
@@ -1771,9 +1732,9 @@ proctype Worker0 (byte nid, taskid; TaskInputs opts) {
         atomic{
             sem_id=2;
             printf("@@@ %d CALL sema_obtain2 %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);
            
         }
         
@@ -1822,8 +1783,8 @@ proctype Worker0 (byte nid, taskid; TaskInputs opts) {
     if
     ::  opts.doPriorityInversion ->
         atomic {
-            Release(task3Sema); 
-            Obtain(task2Sema);
+            TestSyncRelease(task3Sema); 
+            TestSyncObtain(task2Sema);
         }
     ::  else -> skip;
     fi
@@ -1880,9 +1841,9 @@ proctype Worker0 (byte nid, taskid; TaskInputs opts) {
     //==============================================
     // End
 
-    Release(task1Sema);
+    TestSyncRelease(task1Sema);
     atomic{
-        Release(task2Sema);
+        TestSyncRelease(task2Sema);
         printf("@@@ %d LOG Task %d finished\n",_pid,taskid);
         tasks[taskid].state = Zombie;
         printf("@@@ %d STATE %d Zombie\n",_pid,taskid)
@@ -1928,7 +1889,7 @@ proctype Worker1 (byte nid, taskid; TaskInputs opts) {
     //:: else -> skip
     //fi
     
-    Obtain(task3Sema);
+    TestSyncObtain(task3Sema);
 
 
     if
@@ -1983,8 +1944,8 @@ proctype Worker1 (byte nid, taskid; TaskInputs opts) {
     if
     ::  opts.doPriorityInversion ->
         atomic {
-            Release(task1Sema);
-            Obtain(task3Sema);
+            TestSyncRelease(task1Sema);
+            TestSyncObtain(task3Sema);
         }
         
     ::  else -> skip;
@@ -1996,20 +1957,20 @@ proctype Worker1 (byte nid, taskid; TaskInputs opts) {
             sem_id=1
             if
             :: opts.doPriorityInversion -> skip;
-            :: else -> Release(task1Sema);
+            :: else -> TestSyncRelease(task1Sema);
             fi
             
             printf("@@@ %d CALL sema_obtain %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);
             
  
         }
         
         printf("@@@ %d SCALAR rc %d\n",_pid, rc);
 
-    ::  else -> Release(task1Sema);
+    ::  else -> TestSyncRelease(task1Sema);
     fi
 
     if
@@ -2018,9 +1979,9 @@ proctype Worker1 (byte nid, taskid; TaskInputs opts) {
             sem_id=2;
             
             printf("@@@ %d CALL sema_obtain2 %d %d %d\n",
-                    _pid, sem_id, opts.Wait, opts.timeoutLength);
+                    _pid, sem_id, opts.semWait, opts.timeoutLength);
                     /* (self,   sem_id, optionset, timeout,   rc) */
-            sema_obtain(taskid, sem_id, opts.Wait, opts.timeoutLength, rc);
+            sema_obtain(taskid, sem_id, opts.semWait, opts.timeoutLength, rc);
             
         }
         
@@ -2119,8 +2080,8 @@ proctype Worker1 (byte nid, taskid; TaskInputs opts) {
     fi
     
     atomic {
-        Release(task2Sema);
-        Release(task3Sema);
+        TestSyncRelease(task2Sema);
+        TestSyncRelease(task3Sema);
         printf("@@@ %d LOG Task %d finished\n",_pid,taskid);
         tasks[taskid].state = Zombie;
         printf("@@@ %d STATE %d Zombie\n",_pid,taskid)

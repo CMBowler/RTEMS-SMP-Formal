@@ -37,15 +37,17 @@
  */
 
 #include "../common/rtems.pml"
+#define TASK_MAX 4 //three rtems tasks
+#define SEMA_MAX 3
+#include "../common/model.pml"
 
 // Message queue attributes
 
-#define TASK_MAX 4 //three rtems tasks
 #define NULL 0
 
-#define SEMA_MAX 3
 
-#define BAD_ID TASK_MAX
+
+
 
 #define MAX_MESSAGE_QUEUES 3
 #define MAX_PENDING_MESSAGES 4
@@ -61,12 +63,7 @@ inline outputDefines() {
     printf("@@@ %d DEF MAX_PENDING_MESSAGES %d\n",_pid, MAX_PENDING_MESSAGES);
 }
 
-
-mtype = {
-  Zombie, Ready, MsgWait, TimeWait, OtherWait, // Task states
-  Wait, NoWait // Option Set values
-};
-
+mtype{ MsgWait } ;// need to know when Blocked waiting for message
 
 // Tasks
 typedef Task {
@@ -77,16 +74,18 @@ typedef Task {
   byte prio ; // lower number is higher priority
   int ticks; //
   bool tout; // true if woken by a timeout
-  bool doCreate; // whether to create a queue
-  bool doSend; //whether task should send
-  bool doReceive; //whether task should receive
-  bool doWait; //whether task should wait message
+  // Message Model related
   int rcvInterval; //how many ticks to wait
   int rcvMsg; //hold value of message received, modelling receive buffer
   int sndMsg; //hold value of message to send, modelling send buffer
   int targetQueue; //queue id for task to interact with
   int numSends; //number of message send calls to make
   int msgSize; //size of message to send
+  // Scenario related?
+  bool doCreate; // whether to create a queue
+  bool doSend; //whether task should send
+  bool doReceive; //whether task should receive
+  bool doWait; //whether task should wait message
 };
 
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
@@ -97,12 +96,6 @@ byte recrc;             // Receiver global variable
 byte qrc              // creation variable
 byte recout[TASK_MAX] ; // models receive 'out' location.
 
-
-bool semaphore[SEMA_MAX]; // Semaphore
-
-mtype = {
-  FIFO, PRIORITY
-};
 
 typedef Config {
     int name; //An integer is used to represent valid RTEMS_NAME
@@ -218,37 +211,7 @@ inline outputDeclarations () {
   printf("@@@ %d DCLARRAY RTEMS_MESSAGE_QUEUE_BUFFER queue_buffer MAX_PENDING_MESSAGES\n",_pid);
   // Rather than refine an entire Task array, we refine array 'slices'
   printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
-  printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
-}
-
-inline nl() { printf("\n") }
-/*
- * Synchronisation Mechanisms
- *  Obtain(sem_id)   - call that waits to obtain semaphore `sem_id`
- *  Release(sem_id)  - call that releases semaphore `sem_id`
- *  Released(sem_id) - simulates ecosystem behaviour releases `sem_id`
- *
- * Binary semaphores:  True means available, False means in use.
- */
-inline Obtain(sem_id){
-  atomic{
-    printf("@@@ %d WAIT %d\n",_pid,sem_id);
-    semaphore[sem_id] ;        // wait until available
-    semaphore[sem_id] = false; // set as in use
-    printf("@@@ %d LOG WAIT %d Over\n",_pid,sem_id);
-  }
-}
-
-inline Release(sem_id){
-  atomic{
-    printf("@@@ %d SIGNAL %d\n",_pid,sem_id);
-    semaphore[sem_id] = true ; // release
-  }
-}
-
-inline Released(sem_id)
-{
-  semaphore[sem_id] = true ;
+  printf("@@@ %d DCLARRAY Semaphore test_sync_sema SEMA_MAX\n",_pid);
 }
 
 
@@ -432,9 +395,9 @@ mtype scenario;
 inline chooseScenario() {
 
   sendAgain = false;
-  semaphore[0] = false;
-  semaphore[1] = false;
-  semaphore[2] = false;
+  test_sync_sema[0] = false;
+  test_sync_sema[1] = false;
+  test_sync_sema[2] = false;
   sendSema = 0;
   rcvSema1 = 1;
   rcvSema2 = 2;
@@ -580,12 +543,12 @@ proctype Sender (byte taskid) {
                             qrc);
       printf("@@@ %d SCALAR qrc %d\n",_pid,qrc);
       queueCreated = true;
-      Release(startSema);
+      TestSyncRelease(startSema);
   fi
   
   if
   :: tasks[taskid].doSend -> 
-      Obtain(sendSema);
+      TestSyncObtain(sendSema);
       repeat:
       atomic{
       printf("@@@ %d CALL message_queue_send %d %d %d %d sendrc\n",
@@ -604,7 +567,7 @@ proctype Sender (byte taskid) {
       if
       :: tasks[taskid].numSends != 0 -> tasks[SEND_ID].sndMsg++; goto repeat; 
       :: scenario == RcvSnd -> skip;
-      :: else -> Release(rcvSema1);
+      :: else -> TestSyncRelease(rcvSema1);
       fi
       }
   :: else -> skip;
@@ -614,12 +577,12 @@ proctype Sender (byte taskid) {
   //adjust semaphore behaviour for RcvSnd as Receive1 starts
   if 
   :: scenario == RcvSnd -> 
-        Obtain(rcvSema1);
-        Obtain(rcvSema2);
+        TestSyncObtain(rcvSema1);
+        TestSyncObtain(rcvSema2);
   :: else ->         
-        Obtain(sendSema);
-        Obtain(rcvSema2);
-        Obtain(rcvSema1);
+        TestSyncObtain(sendSema);
+        TestSyncObtain(rcvSema2);
+        TestSyncObtain(rcvSema1);
   fi
   
   printf("@@@ %d LOG Sender %d finished\n",_pid,taskid);
@@ -634,7 +597,7 @@ proctype Receiver1 (byte taskid) {
   printf("@@@ %d TASK Worker1\n",_pid);
 
   
-  Obtain(rcvSema1);
+  TestSyncObtain(rcvSema1);
 
   if
   :: tasks[taskid].doReceive && scenario != RcvSnd->
@@ -650,11 +613,11 @@ proctype Receiver1 (byte taskid) {
                               recrc);
       printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
-      Release(rcvSema2);
+      TestSyncRelease(rcvSema2);
       }   
   :: tasks[taskid].doReceive && scenario == RcvSnd->
       atomic{
-      Release(sendSema);
+      TestSyncRelease(sendSema);
       printf("@@@ %d CALL message_queue_receive %d %d %d %d recrc\n",
                 _pid,
                 taskid,
@@ -668,13 +631,13 @@ proctype Receiver1 (byte taskid) {
       printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       }
-  :: else -> Release(rcvSema2); 
+  :: else -> TestSyncRelease(rcvSema2); 
   fi
 
  
 
   atomic{
-  Release(rcvSema1);
+  TestSyncRelease(rcvSema1);
   printf("@@@ %d LOG Receiver1 %d finished\n",_pid,taskid);
   tasks[taskid].state = Zombie;
   printf("@@@ %d STATE %d Zombie\n",_pid,taskid)
@@ -690,7 +653,7 @@ proctype Receiver2 (byte taskid) {
   if
   :: scenario == RcvSnd ->
       goto rcvSkip;
-  :: else -> Obtain(rcvSema2);
+  :: else -> TestSyncObtain(rcvSema2);
   fi
   
   
@@ -706,7 +669,7 @@ proctype Receiver2 (byte taskid) {
       message_queue_receive(taskid,tasks[taskid].targetQueue,tasks[taskid].rcvMsg,recrc);
       printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
-      Release(sendSema);
+      TestSyncRelease(sendSema);
       }
   :: tasks[taskid].doReceive && scenario == RcvSnd->
       atomic{
@@ -715,17 +678,17 @@ proctype Receiver2 (byte taskid) {
               taskid,tasks[taskid].targetQueue,
               tasks[taskid].doWait,
               tasks[taskid].rcvInterval);
-      Release(sendSema);
+      TestSyncRelease(sendSema);
       message_queue_receive(taskid,tasks[taskid].targetQueue,tasks[taskid].rcvMsg,recrc);
       printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       }
-  :: else -> Release(sendSema);
+  :: else -> TestSyncRelease(sendSema);
   fi
 
   rcvSkip:
   atomic{
-  Release(rcvSema2);
+  TestSyncRelease(rcvSema2);
   printf("@@@ %d LOG Receiver2 %d finished\n",_pid,taskid);
   tasks[taskid].state = Zombie;
   printf("@@@ %d STATE %d Zombie\n",_pid,taskid)

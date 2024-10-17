@@ -1,9 +1,11 @@
 # ISSUES
 
+## CURRENT WORK
+
+Moving common parts in all models to `common/(rtems/model).pml` as appropriate.
+
+
 ## PUZZLING
-
-
-
 
 ### STATUS
 
