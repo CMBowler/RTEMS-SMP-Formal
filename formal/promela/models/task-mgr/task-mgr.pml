@@ -63,16 +63,19 @@
 
 #define MAX_PRIO 255
 #define BAD_PRIO MAX_PRIO
-
 #define DEFUALT_PRIO 5
 
+#define BAD_ID 0
 
 // We use two semaphores to synchronise the tasks
 #define SEMA_MAX 3
 
-#define SEMA_TASKCONTROL 0
-#define SEMA_CREATEDELETE 1
-#define SEMA_TASK_START_0 2
+#define SEMA_TASKCONTROL 	(0)
+#define SEMA_TASK_START_0 	(1)
+#define SEMA_CREATEDELETE 	(2)
+
+// System
+#define TIMOUT_VAL 100
 
 /* The following inlines are not given here as atomic,
  * but are intended to be used in an atomic context.
@@ -118,7 +121,7 @@ inline Released(sem_id)
 }
 
 // We envisage two RTEMS tasks involved, at most.
-#define TASK_MAX 8 // These are the "RTEMS" tasks only, numbered 1 & 2
+#define TASK_MAX 5 // These are the "RTEMS" tasks only, numbered 1 & 2
                    // We reserve 0 to model NULL pointers
 
 
@@ -142,6 +145,28 @@ mtype = {
   executing, ready, blocked, dormant, non
 };
 
+inline outputDefines () {
+	printf("@@@ %d DEF NO_OF_EVENTS %d\n",_pid,NO_OF_EVENTS);
+	printf("@@@ %d DEF EVTS_NONE %d\n",_pid,EVTS_NONE);
+	printf("@@@ %d DEF EVTS_PENDING %d\n",_pid,EVTS_PENDING);
+
+	printf("@@@ %d DEF EVT_0 %d\n",_pid,EVT_0);
+	printf("@@@ %d DEF EVT_1 %d\n",_pid,EVT_1);
+	printf("@@@ %d DEF EVT_2 %d\n",_pid,EVT_2);
+	printf("@@@ %d DEF EVT_3 %d\n",_pid,EVT_3);
+	printf("@@@ %d DEF EVTS_ALL %d\n",_pid,EVTS_ALL);
+	printf("@@@ %d DEF NO_TIMEOUT %d\n",_pid,NO_TIMEOUT);
+
+	printf("@@@ %d DEF TASK_MAX %d\n",_pid,TASK_MAX);
+	printf("@@@ %d DEF BAD_ID %d\n",_pid,BAD_ID);
+	printf("@@@ %d DEF SEMA_MAX %d\n",_pid,SEMA_MAX);
+	
+	printf("@@@ %d DEF RC_OK RTEMS_SUCCESSFUL\n",_pid);
+	printf("@@@ %d DEF RC_InvId RTEMS_INVALID_ID\n",_pid);
+	printf("@@@ %d DEF RC_InvAddr RTEMS_INVALID_ADDRESS\n",_pid);
+	printf("@@@ %d DEF RC_Unsat RTEMS_UNSATISFIED\n",_pid);
+	printf("@@@ %d DEF RC_Timeout RTEMS_TIMEOUT\n",_pid);
+}
 
 typedef Mode {
     bool preempt;
@@ -168,6 +193,24 @@ byte sendrc;            // Sender global variable
 byte recrc;             // Receiver global variable
 byte recout[TASK_MAX] ; // models receive 'out' location.
 
+byte createRC;
+byte startRC;
+byte deleteRC;
+
+byte task_id[TASK_MAX] ;
+
+inline outputDeclarations () {
+  printf("@@@ %d DECL byte createRC 0\n",_pid);
+  printf("@@@ %d DECL byte startRC 0\n",_pid);
+  printf("@@@ %d DECL byte deleteRC 0\n",_pid);
+  // Rather than refine an entire Task array, we refine array 'slices'
+  //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
+  //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
+  printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
+  printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);
+  printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
+}
+
 
 inline isNameValid(name, rc) {
     if
@@ -186,8 +229,6 @@ inline setTask(tid, rc) {
     Release(SEMA_TASKCONTROL);
     rc = true;
     if
-    ::  raw_tid == 1 ->
-            tid = 0;
     ::  raw_tid == 2 ->
             tid = 1;
     ::  raw_tid == 4 ->
@@ -196,45 +237,39 @@ inline setTask(tid, rc) {
             tid = 3;
     ::  raw_tid == 16 ->
             tid = 4;
-    ::  raw_tid == 32 ->
+/*    
+	::  raw_tid == 32 ->
             tid = 5;
     ::  raw_tid == 64 ->
             tid = 6;
     ::  raw_tid == 128 ->
             tid = 7;
+*/
     ::  else ->
-            tid = TASK_MAX;
+            tid = 1;
             rc = false;
     fi
 }
 ///*
-inline task_create(nid, prio, preempt, tid, rc) {
+inline task_create(nid, name, prio, preempt, tid, tidRC, rc) {
     atomic {
         if
+		::	name == 0 ->
+				rc = RC_InvName;
         ::  prio == 0 ->
                 rc = RC_InvPrio
         ::  prio >= BAD_PRIO ->
                 rc = RC_InvPrio
+		::  tidRC == false ->
+                rc = RC_TooMany;
+		::	tid == 0 ->
+				rc = RC_InvAddr;
         ::  else ->
-                bool nameRC;
-                isNameValid(name, nameRC);
-                if
-                ::  nameRC == false ->
-                        rc = RC_InvName;
-                ::  else ->
-                        bool setRC;
-                        setTask(tid, setRC);
-                        if 
-                        ::  setRC == false ->
-                                rc = RC_TooMany;
-                        ::  else ->
-                                tasks[tid].nodeid = nid;
-                                tasks[tid].pmlid = _pid;
-                                tasks[tid].prio = prio;
-                                tasks[tid].mode.preempt = preempt;
-                                tasks[tid].state = dormant;
-                        fi
-                fi
+				tasks[tid].nodeid = nid;
+				tasks[tid].pmlid = _pid;
+				tasks[tid].prio = prio;
+				tasks[tid].mode.preempt = preempt;
+				tasks[tid].state = dormant;
         fi
     }
 }
@@ -247,16 +282,21 @@ inline task_start(tid, entry, rc) {
         ::  tasks[tid].state == non ->
                 printf("@@@ %d LOG Start NULL out.\n",_pid);
                 rc = RC_InvId;
-        ::  else ->
-            if 
-            ::  entry == 0 -> RC_InvId
-            ::  else ->
-                tasks[tid].state = ready;
-                tasks[tid].start = entry;
-                // Start Task Model
-                Release(entry);
-                rc = RC_OK;
-            fi
+		:: 	else ->
+				if
+				::  tasks[tid].state != dormant ->
+						rc = RC_IncState;
+				:: 	else ->
+						if 
+						::  entry == 0 -> rc = RC_InvId;
+						::  else ->
+							tasks[tid].state = ready;
+							tasks[tid].start = entry;
+							// Start Task Model
+							Release(entry);
+							rc = RC_OK;
+						fi
+				fi
         fi
     }
 }
@@ -339,52 +379,82 @@ inline task_delete(tid, rc) {
 
 //mtype = {Resume, Suspend, ResSpnd, SpndRes, ResRes, SpndSpnd}
 
-bool name;
-bool createTask, deleteTask, startTask;
+// Task Create
+bool task_1_name;
+byte insertId
+byte createPrio;
+bool createValID;
 
-byte deleteId, insertId;
-byte createPrio, taskEntry;
+bool createTask;
 
-mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, MultiCore}
+// Task Start
+byte taskEntry;
+bool startValID;
+bool doubleStart;
+
+bool startTask;
+
+// Task Delete
+byte deleteId;
+
+bool deleteTask;
+
+
+
+
+mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, IncState MultiCore}
 mtype scenario;
 
 inline chooseScenario() {
 
     // Defaults
-    task_control = 255;
-    name = true;
+    task_control = 30;	// 0001 1110
+    task_1_name = 1;
     createTask = true;
-    deleteTask = true;
+	createPrio = DEFUALT_PRIO;
+	createValID = true;
+
     startTask = false;
-    taskEntry = SEMA_TASK_START_0;
+	startValID = true;
+	doubleStart = false;
+	taskEntry = SEMA_TASK_START_0;
+
+	deleteTask = false;
 
     if
     ::  scenario = CreateAndDestroy;
-    ::  scenario = TooMany;
-    ::  scenario = Invalid;
-    ::  scenario = ISRctx;
-    ::  scenario = InvEntry;
+    //::  scenario = TooMany;
+    //::  scenario = Invalid;
+    //::  scenario = ISRctx;
+    //::  scenario = InvEntry;
+	//::	scenario = IncState;
     fi
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
 
     if
     ::  scenario == CreateAndDestroy ->
             startTask = true;
+			deleteTask = true;
     ::  scenario == TooMany ->
             task_control = 0;
-            deleteTask = false;
-            startTask = false;
     ::  scenario == Invalid ->
             if
-            ::  name = false;
+            ::  task_1_name = 0;
             ::  createPrio = 0;
             ::  createPrio = MAX_PRIO;
-            ::  deleteId = 0; createTask = false;
+            ::  deleteId = BAD_ID; createTask = false; deleteTask = true;
+			::	createValID = false;
+			::	startValID = false; startTask = true; deleteTask = true;
             fi
-    ::  scenario == ISRctx ->
-            skip;
+    //::  scenario == ISRctx -> skip;
     ::  scenario == InvEntry ->
+			startTask = true;
             taskEntry = 0;
+			deleteTask = true;
+	::	scenario == IncState ->
+			startTask = true;
+			doubleStart = true;
+			deleteTask = true;
     ::  else    // go with defaults
     fi
 }
@@ -428,6 +498,7 @@ bool stopclock = false;
 proctype System () {
   byte taskid ;
   bool liveSeen;
+  int tout_cnt = 0;
 
   printf("@@@ %d LOG System running...\n",_pid);
 
@@ -468,7 +539,13 @@ proctype System () {
   //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
 
   if
-  ::  liveSeen -> goto loop
+  ::  liveSeen -> 
+  		tout_cnt = tout_cnt + 1;
+		if	
+		::	tout_cnt > TIMOUT_VAL ->
+				goto loop
+		:: else
+		fi
   ::  else
   fi
   printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
@@ -487,6 +564,7 @@ proctype System () {
 proctype Clock () {
   int tid, tix;
   printf("@@@ %d LOG Clock Started\n",_pid)
+
   do
   ::  stopclock  -> goto stopped
   ::  !stopclock ->
@@ -517,9 +595,7 @@ stopped:
   printf("@@@ %d LOG Clock Stopped\n",_pid);
 }
 
-proctype Creator(byte nid) {
-    byte createRC;
-    byte startRC;
+proctype Runner(byte nid) {
     /*
     if
     :: multicore ->
@@ -528,28 +604,75 @@ proctype Creator(byte nid) {
     :: else
     fi
     */
-
-    byte prio = DEFUALT_PRIO;
+	// Task 0 Create Params
+	byte name = task_1_name;
+    byte prio = createPrio;
     byte preempt = true;
-    byte task_entry = taskEntry;
+	byte mode = 0;
+	byte attr = 0;
+	bool setRC;
+	
+	// Task 0 Start Params 
+	byte entry = taskEntry;
+	bool doubleDone = false;
+	byte startId;
+	//byte args = 0;
 
     if 
     ::  createTask == true ->
-        task_create(nid, prio, preempt, insertId, createRC);
+		if
+		::	createValID == true ->
+				setTask(insertId, setRC);
+				if 
+				::	setRC == false ->
+						printf("@@@ %d CALL TooMany\n", _pid);
+				:: 	else
+				fi
+		::	else ->
+				insertId = 0;
+				setRC = true;
+		fi
+
+		printf("@@@ %d CALL task_create %d %d %d %d %d createRC\n", 
+				_pid, name, prio, mode, attr, insertId);
+
+        task_create(nid, name, prio, preempt, insertId, setRC, createRC);
+		
+		printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
         if 
         ::  createRC == RC_OK ->
-                task_start(insertId, task_entry, startRC);
+repeat_start:
+				if
+				::	startValID == false ->
+						startId = 0;
+				:: 	else -> 
+						startId = insertId;
+				fi
+
+                task_start(startId, entry, startRC);
+				printf("@@@ %d CALL task_start %d %d startRC\n", 
+						_pid, startId, entry);
+				printf("@@@ %d CALL startRC %d\n", _pid, startRC);
+				if
+				::	startRC != RC_OK ->
+						Release(SEMA_CREATEDELETE);
+				:: 	doubleStart == true ->
+						if 
+						::	doubleDone == false ->
+							doubleDone = true;
+							goto repeat_start;
+						:: else
+						fi
+				:: else
+				fi
         ::  else -> skip
         fi
     ::  else
     fi
 
-    printf("@@@ %d SCALAR createRC %d\n",_pid,createRC);
-
-
 }
 
-proctype Destroyer(byte delId) {
+proctype Worker(byte delId) {
     /*
     if
     :: multicore ->
@@ -558,23 +681,27 @@ proctype Destroyer(byte delId) {
     :: else
     fi
     */
-
-    Obtain(SEMA_CREATEDELETE);
+	if 
+	::	startTask == true ->
+	    	Obtain(SEMA_CREATEDELETE);
+	::	else
+	fi
 
     if
     ::  createTask == true ->
-            delId = insertId;
+            deleteId = insertId;
     ::  else
     fi
 
     if
     ::  deleteTask == true -> 
-            byte deleteRC;
-            task_delete(delId, deleteRC);
+			printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, deleteId);
+			
+            task_delete(deleteId, deleteRC);
+
+            printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
     ::  else 
     fi
-
-    printf("@@@ %d SCALAR createRC %d\n",_pid,deleteRC);
 }
 
 // global task variables
@@ -583,7 +710,7 @@ byte x = 0;
 
 proctype Task0() {
     if
-    ::  startTask == true ->
+    ::  startTask == true && scenario != InvEntry ->
             Obtain(SEMA_TASK_START_0);
 
             x = x + 1;
@@ -592,46 +719,42 @@ proctype Task0() {
 
             // Release Semaphores
             Release(SEMA_TASK_START_0);
+			Release(SEMA_CREATEDELETE);
     ::  else -> skip
     fi
-
-    Release(SEMA_CREATEDELETE);
-
 }
 
 init {
-  pid nr;
+	pid nr;
 
-  printf("Event Manager Model running.\n");
-  printf("Setup...\n");
+	printf("Task Manager Model running.\n");
+	printf("Setup...\n");
 
-  printf("@@@ %d NAME Event_Manager_TestGen\n",_pid)
-  //outputDefines();
-  //outputDeclarations();
+	printf("@@@ %d NAME Task_Manager_TestGen\n",_pid)
 
-  printf("@@@ %d INIT\n",_pid);
-  chooseScenario();
+	outputDefines();
+	outputDeclarations();
 
+	chooseScenario();
+	printf("@@@ %d INIT\n",_pid);
 
+	printf("Run...\n");
 
-  printf("Run...\n");
+	
+	run Runner(0);
+	run Worker(0);
+	run Task0();
 
-  run System();
-  run Clock();
+//	run System();
+//	run Clock();
 
-  Released(SEMA_TASKCONTROL);
+	Release(SEMA_TASKCONTROL);
 
-  run Task0();
+	_nr_pr == 1;
 
-  run Creator(0);
-  run Destroyer(0);
+	#ifdef TEST_GEN
+	assert(false);
+	#endif
 
-
-  _nr_pr == 1;
-
-#ifdef TEST_GEN
-  assert(false);
-#endif
-
-  printf("Task Manager Model finished !\n")
+	printf("Task Manager Model finished !\n")
 }

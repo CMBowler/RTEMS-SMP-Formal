@@ -34,11 +34,67 @@ SEGEND: "}"
 NAME: |
   /* Test Name is defined in the Test Case code (tc-model-task-mgr.c) */
 
+pending_DCL: rtems_event_set {0}[TASK_MAX];
+
+semaphore_DCL: rtems_id {0}[SEMA_MAX];
+
+sc_DCL: rtems_status_code
+
+prio_DCL: rtems_task_priority
+
+createRC_DCL: rtems_status_code
+
+startRC_DCL: rtems_status_code
+
+deleteRC_DCL: rtems_status_code
+
+taskID_DCL: rtems_id {0}[TASK_MAX];
+
+tasks_DCL: void ( *{0}[TASK_MAX] )( rtems_task_argument );
+
+INIT: |
+  //initialise_pending( pending, TASK_MAX );
+  initialise_semaphore( 0, ctx->runner_wakeup, semaphore );
+  initialise_semaphore( 1, ctx->worker_wakeup, semaphore );
+
 Runner: |
   checkTaskIs( ctx->runner_id );
 
 Worker: |
   checkTaskIs( ctx->worker_id );
+
+SIGNAL: |
+  Wakeup( semaphore[{}] );
+
+WAIT: |
+  Wait( semaphore[{}] );
+
+task_create: |
+  T_log( T_NORMAL, "Creating Task(%d, %d, %d, %d, RTEMS_MINIMUM_STACK_SIZE, %d)", {0}, {1}, {2}, {3}, {4}, {5});
+  {5} = ( *ctx->t_create )( mapName( {0} ), {1}, {2}, {3}, RTEMS_MINIMUM_STACK_SIZE, {4} ? &taskID[{4}] : NULL);
+  T_log( T_NORMAL, "Returned 0x%x from Create", {5} );
+
+task_start: |
+  T_log( T_NORMAL, "Starting Task(%d, %d, %d)", {0}, {1}, {2});
+  {2} = ( *ctx->t_start )( taskID[{0}], {1} ? tasks[{1}] : NULL, (rtems_task_argument)(void *)(ctx) );
+  T_log( T_NORMAL, "Returned 0x%x from Start", {2} );
+
+task_delete: |
+  T_log( T_NORMAL, "Deleting Task(%d)", {0}, {1} );
+  {1} = ( *ctx->t_delete)( taskID[{0}] );
+  T_log( T_NORMAL, "Returned 0x%x from Start", {1} );
+
+createRC: |
+  T_rsc( createRC, {0} );
+
+startRC: |
+  T_rsc( startRC, {0} );
+
+delRC: |
+  T_rsc( deleteRC, {0} );
+
+TooMany: |
+  ctx->seized_objects = T_seize_objects( Create, ctx );
 
 Ready: |
    /* We (Task {0}) must have been recently ready because we are running */
