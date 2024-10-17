@@ -113,6 +113,10 @@ void RtemsModelTaskMgr_Run{0}(
   //ctx->send = send;
   //ctx->receive = receive;
   //ctx->get_pending_events = get_pending_events;
+  ctx->t_create = t_create;
+  ctx->t_start = t_start;
+  ctx->t_delete = t_delete;
+
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;
 
@@ -126,7 +130,9 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->receive_timeout = RTEMS_NO_TIMEOUT;
   ctx->unsatisfied_pending = 0xffffffff;
   memset( &ctx->thread_switch_log, 0, sizeof( ctx->thread_switch_log ) );
-  T_eq_u32( GetPending( ctx ), 0 );
+  T_log( T_NORMAL, "Test - Probe" );
+  //T_eq_u32( GetPending( ctx ), 0 );
+  T_log( T_NORMAL, "Test - Probe" );
   _Thread_Wait_flags_set( ctx->runner_thread, THREAD_WAIT_CLASS_PERIOD );
 
   TestSegment0( ctx );

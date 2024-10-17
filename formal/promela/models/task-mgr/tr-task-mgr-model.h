@@ -136,7 +136,7 @@ rtems_name mapName(int task) ;
 
 void checkTaskIs( rtems_id expected_id ) ;
 
-void initialise_pending( rtems_event_set pending[], int max );
+//void initialise_pending( rtems_event_set pending[], int max );
 
 void RtemsModelTaskMgr_Setup_Wrap( void *arg ) ;
 

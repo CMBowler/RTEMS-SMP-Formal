@@ -65,8 +65,6 @@
 #define BAD_PRIO MAX_PRIO
 #define DEFUALT_PRIO 5
 
-#define BAD_ID 0
-
 // We use two semaphores to synchronise the tasks
 #define SEMA_MAX 3
 
@@ -141,7 +139,6 @@ byte task_control = CLEAR_TASKS;
   //  non-existent - Uncreated or deleted task
 
 mtype = {
-  Zombie, Ready, EventWait, TimeWait, OtherWait,
   executing, ready, blocked, dormant, non
 };
 

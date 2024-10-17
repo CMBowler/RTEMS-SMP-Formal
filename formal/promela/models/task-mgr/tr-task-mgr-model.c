@@ -55,22 +55,27 @@ static const char PromelaModelTaskMgr[] = "/PML-TaskMgr";
 
 #define TASK_NAME_DEFAULT (0x54534b30) // TSK0 hex
 
+void Wait( rtems_id id )
+{
+  rtems_status_code sc;
+
+  sc = rtems_semaphore_obtain( id, RTEMS_WAIT, RTEMS_NO_TIMEOUT );
+  T_quiet_rsc_success( sc );
+}
+
+void Wakeup( rtems_id id )
+{
+  rtems_status_code sc;
+
+  sc = rtems_semaphore_release( id );
+  T_quiet_rsc_success( sc );
+}
+
 /*
  * Here we need a mapping from model "task numbers/names" to thread Id's here
  *  Promela Process 3 corresponds to Task 0 (Worker), doing Send
  *  Promela Process 4 corresponds to Task 1 (Runner), doing Receive
  */
-rtems_id mapid( Context *ctx, int pid )
-{
-  rtems_id mapped_id;
-
-  switch ( pid ) {
-    case 1 : mapped_id = ctx->worker_id ; break;
-    case 2 : mapped_id = ctx->runner_id; break;
-    default : mapped_id = 0xffffffff; break;
-  }
-  return mapped_id;
-}
 
 rtems_name mapName(int task)
 {
@@ -98,6 +103,7 @@ rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)
 }
 */
 
+/*
 void initialise_pending( rtems_event_set pending[], int max )
 {
   int i;
@@ -106,6 +112,7 @@ void initialise_pending( rtems_event_set pending[], int max )
     pending[i] = 0;
   }
 }
+*/
 
 static void RtemsModelTaskMgr_Teardown(
   RtemsModelTaskMgr_Context *ctx
@@ -176,15 +183,15 @@ void RtemsModelTaskMgr_Cleanup(
 {
   rtems_status_code sc;
   rtems_event_set events;
-/*
+
   events = 0;
-  sc = ( *ctx->receive )(
+  sc = rtems_event_receive(
     RTEMS_ALL_EVENTS,
     RTEMS_NO_WAIT | RTEMS_EVENT_ANY,
     0,
     &events
   );
-*/
+
   if ( sc == RTEMS_SUCCESSFUL ) {
     T_quiet_ne_u32( events, 0 );
   } else {
