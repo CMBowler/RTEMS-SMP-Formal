@@ -89,6 +89,12 @@ rtems_name mapName(int task)
     }
     return taskName;
 }
+
+void init_tid(rtems_id* id, int max) {
+    for( int i=0; i < max; i++ ) {
+        id[i] = 0;
+    }
+}
 /*
 rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)
 {

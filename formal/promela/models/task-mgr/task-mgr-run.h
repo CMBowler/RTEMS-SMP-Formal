@@ -20,12 +20,14 @@ static void Worker{0}( rtems_task_argument arg )
 
 }}
 
+/*
 RTEMS_ALIGNED( RTEMS_TASK_STORAGE_ALIGNMENT ) static char WorkerStorage{0}[
   RTEMS_TASK_STORAGE_SIZE(
     MAX_TLS_SIZE + TEST_MINIMUM_STACK_SIZE,
     WORKER_ATTRIBUTES
   )
 ];
+*/
 
 static void RtemsModelTaskMgr_Setup{0}(
   RtemsModelTaskMgr_Context *ctx

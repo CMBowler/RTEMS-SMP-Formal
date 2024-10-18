@@ -53,7 +53,7 @@ taskID_DCL: rtems_id {0}[TASK_MAX];
 tasks_DCL: void ( *{0}[TASK_MAX] )( rtems_task_argument );
 
 INIT: |
-  //initialise_pending( pending, TASK_MAX );
+  init_tid( taskID, TASK_MAX );
   initialise_semaphore( 0, ctx->runner_wakeup, semaphore );
   initialise_semaphore( 1, ctx->worker_wakeup, semaphore );
 
@@ -81,7 +81,7 @@ task_start: |
 
 task_delete: |
   T_log( T_NORMAL, "Deleting Task(%d)", {0}, {1} );
-  {1} = ( *ctx->t_delete)( taskID[{0}] );
+  {1} = ( *ctx->t_delete)( {0} ? taskID[{0}] : 0xfffffffd );
   T_log( T_NORMAL, "Returned 0x%x from Delete", {1} );
 
 createRC: |

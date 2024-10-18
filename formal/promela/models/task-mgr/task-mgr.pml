@@ -65,6 +65,8 @@
 #define BAD_PRIO MAX_PRIO
 #define DEFUALT_PRIO 5
 
+#define INVALID_ID 0
+
 // We use two semaphores to synchronise the tasks
 #define SEMA_MAX 3
 
@@ -156,7 +158,7 @@ inline outputDefines () {
 	printf("@@@ %d DEF NO_TIMEOUT %d\n",_pid,NO_TIMEOUT);
 
 	printf("@@@ %d DEF TASK_MAX %d\n",_pid,TASK_MAX);
-	printf("@@@ %d DEF BAD_ID %d\n",_pid,BAD_ID);
+	printf("@@@ %d DEF INVALID_ID %d\n",_pid,INVALID_ID);
 	printf("@@@ %d DEF SEMA_MAX %d\n",_pid,SEMA_MAX);
 	
 	printf("@@@ %d DEF RC_OK RTEMS_SUCCESSFUL\n",_pid);
@@ -286,7 +288,7 @@ inline task_start(tid, entry, rc) {
 						rc = RC_IncState;
 				:: 	else ->
 						if 
-						::  entry == 0 -> rc = RC_InvId;
+						::  entry == 0 -> rc = RC_InvAddr;
 						::  else ->
 							tasks[tid].state = ready;
 							tasks[tid].start = entry;
@@ -349,25 +351,31 @@ inline removeTask(tid, rc) {
 
 ///*
 inline task_delete(tid, rc) {
-    assert(tid < TASK_MAX);
     atomic {
         if
-        ::  tasks[tid].state == non ->
+        ::  tid > TASK_MAX ->
+                rc = RC_InvId;
+        ::  tid == 0 ->
                 rc = RC_InvId;
         ::  else ->
                 if
-                ::  tasks[tid].isr == true ->
-                        rc = RC_FrmIsr;
+                ::  tasks[tid].state == non ->
+                        rc = RC_IncState;
                 ::  else ->
-                        bool isremoved;
-                        removeTask(tid, isremoved);
                         if
-                        ::  isremoved == false ->
-                                rc = RC_InvId;
+                        ::  tasks[tid].isr == true ->
+                                rc = RC_FrmIsr;
                         ::  else ->
-                                tasks[tid].state = non;
-                                tasks[tid].start = 0;
-                                rc = RC_OK;
+                                bool isremoved;
+                                removeTask(tid, isremoved);
+                                if
+                                ::  isremoved == false ->
+                                        rc = RC_InvId;
+                                ::  else ->
+                                        tasks[tid].state = non;
+                                        tasks[tid].start = 0;
+                                        rc = RC_OK;
+                                fi
                         fi
                 fi
         fi
@@ -422,10 +430,10 @@ inline chooseScenario() {
     if
     ::  scenario = CreateAndDestroy;
     //::  scenario = TooMany;
-    //::  scenario = Invalid;
+    ::  scenario = Invalid;
     //::  scenario = ISRctx;
-    //::  scenario = InvEntry;
-	//::	scenario = IncState;
+    ::  scenario = InvEntry;
+	::	scenario = IncState;
     fi
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
 
@@ -440,7 +448,7 @@ inline chooseScenario() {
             ::  task_1_name = 0;
             ::  createPrio = 0;
             ::  createPrio = MAX_PRIO;
-            ::  deleteId = BAD_ID; createTask = false; deleteTask = true;
+            ::  deleteId = INVALID_ID; createTask = false; deleteTask = true;
 			::	createValID = false;
 			::	startValID = false; startTask = true; deleteTask = true;
             fi

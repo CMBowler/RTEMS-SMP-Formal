@@ -134,6 +134,8 @@ rtems_id mapid( Context *ctx, int pid ) ;
 
 rtems_name mapName(int task) ;
 
+void init_tid(rtems_id* id, int max) ;
+
 void checkTaskIs( rtems_id expected_id ) ;
 
 //void initialise_pending( rtems_event_set pending[], int max );
