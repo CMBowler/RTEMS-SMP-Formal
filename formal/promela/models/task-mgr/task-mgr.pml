@@ -43,6 +43,14 @@
  */
 
 #include "../common/rtems.pml"
+#define TASK_MAX 5 
+#define SEMA_MAX 2
+#include "../common/model.pml"
+
+// We use two semaphores to synchronise the tasks
+#define SEMA_CREATEDELETE 	(0)
+#define SEMA_TASK_START_0 	(1)
+//#define SEMA_TASKCONTROL 	(2)
 
 /*
  * We need to output annotations for any #define we use.
@@ -50,40 +58,15 @@
  * and use an inline to output them.
  */
 
-// Event Sets - we only support 4 events, rather than 32
-#define NO_OF_EVENTS 4
-#define EVTS_NONE 0
-#define EVTS_PENDING 0
-#define EVT_0 1
-#define EVT_1 2
-#define EVT_2 4
-#define EVT_3 8
-#define EVTS_ALL 15
-#define NO_TIMEOUT 0
-
 #define MAX_PRIO 255
 #define BAD_PRIO MAX_PRIO
 #define DEFUALT_PRIO 5
 
 #define INVALID_ID 0
+#define RUNNER_ID 1
 
-// We use two semaphores to synchronise the tasks
-#define SEMA_MAX 3
-
-#define SEMA_CREATEDELETE 	(0)
-#define SEMA_TASK_START_0 	(1)
-//#define SEMA_TASKCONTROL 	(2)
-
-
-// System
-#define TIMOUT_VAL 100
-
-/* The following inlines are not given here as atomic,
- * but are intended to be used in an atomic context.
-*/
-
-inline nl() { printf("\n") } // Useful shorthand
-
+#define CLEAR_TASKS 255
+byte task_control = CLEAR_TASKS;
 
 /*
  * Running Orders (maintained by simple global sync counter):
@@ -121,41 +104,7 @@ inline Released(sem_id)
   semaphore[sem_id] = true ;
 }
 
-// We envisage two RTEMS tasks involved, at most.
-#define TASK_MAX 5 // These are the "RTEMS" tasks only, numbered 1 & 2
-                   // We reserve 0 to model NULL pointers
-
-
-#define CLEAR_TASKS 255
-byte task_control = CLEAR_TASKS;
-
-// A task may exist in one of the following five states:
-
-  //  executing - Currently scheduled to the CPU
-
-  //  ready - May be scheduled to the CPU
-
-  //  blocked - Unable to be scheduled to the CPU
-
-  //  dormant - Created task that is not started
-
-  //  non-existent - Uncreated or deleted task
-
-mtype = {
-  executing, ready, blocked, dormant, non
-};
-
 inline outputDefines () {
-	printf("@@@ %d DEF NO_OF_EVENTS %d\n",_pid,NO_OF_EVENTS);
-	printf("@@@ %d DEF EVTS_NONE %d\n",_pid,EVTS_NONE);
-	printf("@@@ %d DEF EVTS_PENDING %d\n",_pid,EVTS_PENDING);
-
-	printf("@@@ %d DEF EVT_0 %d\n",_pid,EVT_0);
-	printf("@@@ %d DEF EVT_1 %d\n",_pid,EVT_1);
-	printf("@@@ %d DEF EVT_2 %d\n",_pid,EVT_2);
-	printf("@@@ %d DEF EVT_3 %d\n",_pid,EVT_3);
-	printf("@@@ %d DEF EVTS_ALL %d\n",_pid,EVTS_ALL);
-	printf("@@@ %d DEF NO_TIMEOUT %d\n",_pid,NO_TIMEOUT);
 
 	printf("@@@ %d DEF TASK_MAX %d\n",_pid,TASK_MAX);
 	printf("@@@ %d DEF INVALID_ID %d\n",_pid,INVALID_ID);
@@ -179,7 +128,7 @@ typedef Task {
   int start;    // Starting address
   byte nodeid;  // So we can spot remote calls
   byte pmlid;   // Promela process id
-  mtype state = non ; // {Ready,EventWait,TickWait,OtherWait}
+  mtype state = Zombie ; // {Ready,EventWait,TickWait,OtherWait}
   Mode mode;    // Contains information about the task mode.
   byte prio ;   // lower number is higher priority
   int ticks;    //
@@ -269,7 +218,7 @@ inline task_create(nid, name, prio, preempt, tid, tidRC, rc) {
 				tasks[tid].pmlid = _pid;
 				tasks[tid].prio = prio;
 				tasks[tid].mode.preempt = preempt;
-				tasks[tid].state = dormant;
+				tasks[tid].state = Dormant;
         fi
     }
 }
@@ -279,18 +228,18 @@ inline task_create(nid, name, prio, preempt, tid, tidRC, rc) {
 inline task_start(tid, entry, rc) {
     atomic {
         if
-        ::  tasks[tid].state == non ->
+        ::  tasks[tid].state == Zombie ->
                 printf("@@@ %d LOG Start NULL out.\n",_pid);
                 rc = RC_InvId;
 		:: 	else ->
 				if
-				::  tasks[tid].state != dormant ->
+				::  tasks[tid].state != Dormant ->
 						rc = RC_IncState;
 				:: 	else ->
 						if 
 						::  entry == 0 -> rc = RC_InvAddr;
 						::  else ->
-							tasks[tid].state = ready;
+							tasks[tid].state = Ready;
 							tasks[tid].start = entry;
 							// Start Task Model
 							Release(entry);
@@ -302,11 +251,11 @@ inline task_start(tid, entry, rc) {
 }
 //*/
 
-/*
-inline task_suspend(self, tid, rc) {
+
+inline task_suspend(tid, rc) {
     atomic {
         if
-        ::  tasks[tid].state == non ->
+        ::  tasks[tid].state == Zombie ->
                 printf("@@@ %d LOG Suspend NULL out.\n",_pid);
                 rc = RC_InvId;
         ::  tasks[tid].state == dormant ->
@@ -317,13 +266,24 @@ inline task_suspend(self, tid, rc) {
         fi
     }
 }
-//*/
 
-/*
+inline task_isSuspend(tid, rc) {
+    atomic {
+        if
+        ::  tasks[tid].state == Zombie ->
+                rc = RC_InvId;
+        ::  tasks[tid].state == Ready ->
+                rc = RC_OK;
+        ::  else ->
+                rc = RC_AlrSuspd;
+        fi
+    }
+}
+
 inline task_resume(self, tid, rc) {
     atomic {
         if
-        ::  tasks[tid].state == non ->
+        ::  tasks[tid].state == Zombie ->
             printf("@@@ %d LOG Resume NULL out.\n",_pid);
             rc = RC_InvId;
         :: tasks[tid].state != suspended ->
@@ -334,7 +294,6 @@ inline task_resume(self, tid, rc) {
         fi
     }
 }
-//*/
 
 inline removeTask(tid, rc) {
     byte raw_tid = 1 << tid;
@@ -359,7 +318,7 @@ inline task_delete(tid, rc) {
                 rc = RC_InvId;
         ::  else ->
                 if
-                ::  tasks[tid].state == non ->
+                ::  tasks[tid].state == Zombie ->
                         rc = RC_IncState;
                 ::  else ->
                         if
@@ -372,7 +331,7 @@ inline task_delete(tid, rc) {
                                 ::  isremoved == false ->
                                         rc = RC_InvId;
                                 ::  else ->
-                                        tasks[tid].state = non;
+                                        tasks[tid].state = Zombie;
                                         tasks[tid].start = 0;
                                         rc = RC_OK;
                                 fi
@@ -414,7 +373,7 @@ mtype scenario;
 inline chooseScenario() {
 
     // Defaults
-    task_control = 30;	// 0001 1110
+    task_control = 28;	// 0001 1100 Task[1] reserved for runner.
     task_1_name = 1;
     createTask = true;
 	createPrio = DEFUALT_PRIO;
@@ -426,6 +385,8 @@ inline chooseScenario() {
 	taskEntry = SEMA_TASK_START_0;
 
 	deleteTask = false;
+
+    tasks[RUNNER_ID].state = Ready;
 
     if
     ::  scenario = CreateAndDestroy;
@@ -441,8 +402,8 @@ inline chooseScenario() {
     ::  scenario == CreateAndDestroy ->
             startTask = true;
 			deleteTask = true;
-    ::  scenario == TooMany ->
-            task_control = 0;
+//    ::  scenario == TooMany ->
+//            task_control = 0;
     ::  scenario == Invalid ->
             if
             ::  task_1_name = 0;
@@ -512,24 +473,20 @@ proctype System () {
   taskid = 1;
   liveSeen = false;
 
-/*
   printf("@@@ %d LOG Loop through tasks...\n",_pid);
   atomic {
     printf("@@@ %d LOG Scenario is ",_pid);
     printm(scenario); nl();
   }
-*/
   do   // while taskid < TASK_MAX ....
-  ::  taskid ==  TASK_MAX -> break;
+  ::  taskid == TASK_MAX -> break;
   ::  else ->
-/*
       atomic {
         printf("@@@ %d LOG Task %d state is ",_pid,taskid);
         printm(tasks[taskid].state); nl()
       }
-*/
       if
-      :: tasks[taskid].state == non -> taskid++
+      :: tasks[taskid].state == Zombie -> taskid++
       :: else ->
          if
          ::  tasks[taskid].state == OtherWait
@@ -542,16 +499,10 @@ proctype System () {
       fi
   od
 
-  //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
+  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
 
   if
-  ::  liveSeen -> 
-  		tout_cnt = tout_cnt + 1;
-		if	
-		::	tout_cnt > TIMOUT_VAL ->
-				goto loop
-		:: else
-		fi
+  ::  liveSeen -> goto loop
   ::  else
   fi
   printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
@@ -601,7 +552,7 @@ stopped:
   printf("@@@ %d LOG Clock Stopped\n",_pid);
 }
 
-proctype Runner(byte nid) {
+proctype Runner(byte nid, taskid) {
     /*
     if
     :: multicore ->
@@ -610,6 +561,12 @@ proctype Runner(byte nid) {
     :: else
     fi
     */
+
+    // Runner Task Params
+    tasks[taskid].nodeid = nid;
+    tasks[taskid].pmlid = _pid;
+    tasks[taskid].state = Ready;
+
 	// Task 0 Create Params
 	byte name = task_1_name;
     byte prio = createPrio;
@@ -698,6 +655,15 @@ repeat_start:
     ::  else 
     fi
 
+    // Once done, free runner task model id:
+    bool runRC;
+    removeTask(taskid, runRC);
+    if
+    ::  runRC == true ->
+            tasks[taskid].state = Zombie;
+    ::  else
+    fi
+
 }
 
 /*
@@ -736,16 +702,12 @@ proctype Worker(byte delId) {
 
 // global task variables
 
-byte x = 0;
-
 proctype Task0() {
     if
     ::  startTask == true && scenario != InvEntry ->
             Obtain(SEMA_TASK_START_0);
 
-            x = x + 1;
-
-            printf("%d\n", x);
+            //Do Stuff
 
             // Release Semaphores
             Release(SEMA_TASK_START_0);
@@ -770,15 +732,11 @@ init {
 
 	printf("Run...\n");
 
+	run System();
+	run Clock();
 	
-	run Runner(0);
-//	run Worker(0);
+	run Runner(0, RUNNER_ID);
 	run Task0();
-
-//	run System();
-//	run Clock();
-
-//	Release(SEMA_TASKCONTROL);
 
 	_nr_pr == 1;
 

@@ -3,6 +3,6 @@
 static void Runner( RtemsModelTaskMgr_Context *ctx )
 {
   T_log( T_NORMAL, "Runner running" );
-  TestSegment1( ctx );
+  TestSegment3( ctx );
   T_log( T_NORMAL, "Runner finished" );
 }

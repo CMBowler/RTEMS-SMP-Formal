@@ -48,6 +48,10 @@ startRC_DCL: rtems_status_code
 
 deleteRC_DCL: rtems_status_code
 
+suspendRC_DCL: rtems_status_code
+
+resumeRC_DCL: rtems_status_code
+
 taskID_DCL: rtems_id {0}[TASK_MAX];
 
 tasks_DCL: void ( *{0}[TASK_MAX] )( rtems_task_argument );
@@ -84,6 +88,16 @@ task_delete: |
   {1} = ( *ctx->t_delete)( {0} ? taskID[{0}] : 0xfffffffd );
   T_log( T_NORMAL, "Returned 0x%x from Delete", {1} );
 
+task_suspend: |
+  T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
+  {1} = (*ctx->t_suspend)( {0} ? taskID[{0}] : 0xfffffffd );
+  T_log( T_NORMAL, "Returned 0x%x from Suspend", {1} );
+
+task_resume: |
+  T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
+  {1} = (*ctx->t_resume)( {0} ? taskID[{0}] : 0xfffffffd );
+  T_log( T_NORMAL, "Returned 0x%x from Resume", {1} );
+
 createRC: |
   T_rsc( createRC, {0} );
 
@@ -92,6 +106,12 @@ startRC: |
 
 delRC: |
   T_rsc( deleteRC, {0} );
+
+suspRC: |
+  T_rsc( suspendRC, {0} );
+
+resRC: |
+  T_rsc( resumeRC, {0} );
 
 TooMany: |
   ctx->seized_objects = T_seize_objects( Create, ctx );
