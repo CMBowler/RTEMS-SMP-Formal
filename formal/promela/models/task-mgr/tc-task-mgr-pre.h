@@ -112,3 +112,17 @@ static rtems_status_code TaskDelete(
 {
     return rtems_task_delete( id );
 }
+
+static rtems_status_code TaskSuspend(
+    rtems_id id 
+)
+{
+    return rtems_task_suspend( id );
+}
+
+static rtems_status_code TaskResume(
+    rtems_id id 
+)
+{
+    return rtems_task_resume( id );
+}

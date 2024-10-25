@@ -82,7 +82,15 @@ typedef struct {
     // copy of the corresponding RtemsModelEventsMgr_Run() parameter
     rtems_status_code ( *t_delete )(
                         rtems_id
-                    ); 
+                    );
+    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    rtems_status_code ( *t_suspend )(
+                        rtems_id
+                    );
+    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    rtems_status_code ( *t_resume )(
+                        rtems_id
+                    );
     // copy of the corresponding RtemsModelEventsMgr_Run() parameter
     unsigned int wait_class; // copy of the corresponding
                             // RtemsModelEventsMgr_Run() parameter

@@ -145,6 +145,8 @@ byte recout[TASK_MAX] ; // models receive 'out' location.
 byte createRC;
 byte startRC;
 byte deleteRC;
+byte suspendRC;
+byte resumeRC;
 
 byte task_id[TASK_MAX] ;
 
@@ -152,6 +154,8 @@ inline outputDeclarations () {
   printf("@@@ %d DECL byte createRC 0\n",_pid);
   printf("@@@ %d DECL byte startRC 0\n",_pid);
   printf("@@@ %d DECL byte deleteRC 0\n",_pid);
+  printf("@@@ %d DECL byte suspendRC 0\n",_pid);
+  printf("@@@ %d DECL byte resumeRC 0\n",_pid);
   // Rather than refine an entire Task array, we refine array 'slices'
   //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
   //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
@@ -256,12 +260,11 @@ inline task_suspend(tid, rc) {
     atomic {
         if
         ::  tasks[tid].state == Zombie ->
-                printf("@@@ %d LOG Suspend NULL out.\n",_pid);
                 rc = RC_InvId;
-        ::  tasks[tid].state == dormant ->
+        ::  tasks[tid].state == Dormant ->
                 rc = RC_AlrSuspd;
         ::  else ->
-                task[tid].state = dormant; ->
+                tasks[tid].state = Dormant;
                 rc = RC_OK;
         fi
     }
@@ -280,17 +283,19 @@ inline task_isSuspend(tid, rc) {
     }
 }
 
-inline task_resume(self, tid, rc) {
+inline task_resume(tid, rc) {
     atomic {
         if
         ::  tasks[tid].state == Zombie ->
-            printf("@@@ %d LOG Resume NULL out.\n",_pid);
             rc = RC_InvId;
-        :: tasks[tid].state != suspended ->
-            rc = RC_IncState;
-        :: else ->
-            tasks[tid].state = suspended ->
-            rc = RC_OK;
+        ::  else ->
+                if
+                :: tasks[tid].state != Dormant ->
+                    rc = RC_IncState;
+                :: else ->
+                    tasks[tid].state = Ready ->
+                    rc = RC_OK;
+                fi
         fi
     }
 }
@@ -364,10 +369,18 @@ byte deleteId;
 
 bool deleteTask;
 
+// Task Suspend/Resume
+byte suspendId;
+byte resumeId;
+bool suspValId;
+bool resumeValId;
+bool doubleSuspend;
+
+bool suspendTask;
 
 
 
-mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, IncState MultiCore}
+mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, IncState, SuspResume, MultiCore}
 mtype scenario;
 
 inline chooseScenario() {
@@ -386,6 +399,13 @@ inline chooseScenario() {
 
 	deleteTask = false;
 
+    suspendTask = false;
+    suspendId = 0;
+    suspValId = true;
+    resumeId = 0;
+    resumeValId = true;
+    doubleSuspend = false;
+
     tasks[RUNNER_ID].state = Ready;
 
     if
@@ -395,6 +415,7 @@ inline chooseScenario() {
     //::  scenario = ISRctx;
     ::  scenario = InvEntry;
 	::	scenario = IncState;
+    ::  scenario = SuspResume;
     fi
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
 
@@ -422,34 +443,47 @@ inline chooseScenario() {
 			startTask = true;
 			doubleStart = true;
 			deleteTask = true;
+    ::  scenario == SuspResume ->
+            startTask = true;
+			deleteTask = true;
+            suspendTask = true;
+            if
+            ::  suspValId = true; resumeValId = true; // Default Parameters: suspend -> RTEMS_SUCCESSFUL; resume -> RTEMS_SUCCESSFUL
+            ::  suspValId = false; // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
+            ::  suspValId = false; resumeValId = false; // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INVALID_ID
+            ::  doubleSuspend = true; // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED; resume -> RTEMS_SUCCESSFUL
+            fi
     ::  else    // go with defaults
     fi
 }
 
-/*
-proctype SuspendResume (byte nid, taskid) {
+inline SuspendResume(suspId, resumeId) {
+    bool repeated = false;
 
-    byte sc;
-    printf( "@@@ %d DECL byte sc\n", _pid );
-    byte prio ;
-    printf( "@@@ %d DECL byte prio\n", _pid );
-
-    tasks[taskid].nodeid = nid;
-    tasks[taskid].pmlid = _pid;
-    tasks[taskid].state = Ready;
-    printf("@@@ %d TASK Worker\n",_pid);
+suspRepeat:
+    // Suspend
+    printf("@@@ %d CALL task_suspend %d suspendRC\n", 
+                _pid, suspId, suspendRC);
+    task_suspend(suspId, suspendRC);
+    printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
 
     if
-    :: doSuspend ->
-        task_suspend(taskid, target, sc);
-        printf("@@@ %d SCALAR Suspend rc %d\n",_pid,rc);
-    :: else ->
-        task_resume(taskid, target, sc);
+    ::  doubleSuspend == true && repeated == false ->
+            repeated = true;
+            goto suspRepeat;
+    ::  else
     fi
-    
+    //Check is suspended
+    //...
+
+    //Resume
+    printf("@@@ %d CALL task_resume %d resumeRC\n", 
+                _pid, resumeId, resumeRC);
+    task_resume(resumeId, resumeRC);
+    printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
 
 }
-//*/
+
 
 bool stopclock = false;
 
@@ -638,6 +672,22 @@ repeat_start:
 	    	Obtain(SEMA_CREATEDELETE);
 	::	else
 	fi
+
+    if
+    ::  suspendTask == true ->
+            if
+            ::  suspValId == true ->
+                    suspendId = insertId;
+            ::  else // Set to 0
+            fi
+            if
+            ::  resumeValId == true ->
+                    resumeId = insertId;
+            ::  else // Set to 0
+            fi
+            SuspendResume(suspendId, resumeId);
+    ::  else 
+    fi
 
     if
     ::  createTask == true ->

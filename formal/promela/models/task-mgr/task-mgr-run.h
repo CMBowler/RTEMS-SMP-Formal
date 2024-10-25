@@ -88,6 +88,12 @@ void RtemsModelTaskMgr_Run{0}(
   rtems_status_code ( *t_delete )(
                         rtems_id
                     ),
+  rtems_status_code ( *t_suspend )(
+                        rtems_id
+                    ),
+  rtems_status_code ( *t_resume )(
+                        rtems_id
+                    ),
   unsigned int         wait_class,
   int                  waiting_for_event
 )
@@ -118,6 +124,8 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->t_create = t_create;
   ctx->t_start = t_start;
   ctx->t_delete = t_delete;
+  ctx->t_suspend = t_suspend;
+  ctx->t_resume = t_resume;
 
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;

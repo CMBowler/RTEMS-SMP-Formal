@@ -85,17 +85,17 @@ task_start: |
 
 task_delete: |
   T_log( T_NORMAL, "Deleting Task(%d)", {0}, {1} );
-  {1} = ( *ctx->t_delete)( {0} ? taskID[{0}] : 0xfffffffd );
+  {1} = ( *ctx->t_delete )( {0} ? taskID[{0}] : 0xffffffff );
   T_log( T_NORMAL, "Returned 0x%x from Delete", {1} );
 
 task_suspend: |
   T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
-  {1} = (*ctx->t_suspend)( {0} ? taskID[{0}] : 0xfffffffd );
+  {1} = ( *ctx->t_suspend )( {0} ? taskID[{0}] : 0xffffffff );
   T_log( T_NORMAL, "Returned 0x%x from Suspend", {1} );
 
 task_resume: |
   T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
-  {1} = (*ctx->t_resume)( {0} ? taskID[{0}] : 0xfffffffd );
+  {1} = ( *ctx->t_resume )( {0} ? taskID[{0}] : 0xffffffff );
   T_log( T_NORMAL, "Returned 0x%x from Resume", {1} );
 
 createRC: |
@@ -107,10 +107,10 @@ startRC: |
 delRC: |
   T_rsc( deleteRC, {0} );
 
-suspRC: |
+suspendRC: |
   T_rsc( suspendRC, {0} );
 
-resRC: |
+resumeRC: |
   T_rsc( resumeRC, {0} );
 
 TooMany: |

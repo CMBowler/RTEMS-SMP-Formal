@@ -7,6 +7,8 @@ T_TEST_CASE( RtemsModelTaskMgr{0} )
     TaskCreate,
     TaskStart,
     TaskDelete,
+    TaskSuspend,
+    TaskResume,
     THREAD_WAIT_CLASS_EVENT,
     STATES_WAITING_FOR_EVENT
   );
