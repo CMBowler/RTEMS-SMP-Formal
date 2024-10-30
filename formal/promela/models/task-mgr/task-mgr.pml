@@ -261,10 +261,10 @@ inline task_suspend(tid, rc) {
         if
         ::  tasks[tid].state == Zombie ->
                 rc = RC_InvId;
-        ::  tasks[tid].state == Dormant ->
+        ::  tasks[tid].state == Blocked ->
                 rc = RC_AlrSuspd;
         ::  else ->
-                tasks[tid].state = Dormant;
+                tasks[tid].state = Blocked;
                 rc = RC_OK;
         fi
     }
@@ -275,10 +275,10 @@ inline task_isSuspend(tid, rc) {
         if
         ::  tasks[tid].state == Zombie ->
                 rc = RC_InvId;
-        ::  tasks[tid].state == Ready ->
-                rc = RC_OK;
-        ::  else ->
+        ::  tasks[tid].state == Blocked ->
                 rc = RC_AlrSuspd;
+        ::  else ->
+                rc = RC_OK;
         fi
     }
 }
@@ -290,7 +290,7 @@ inline task_resume(tid, rc) {
             rc = RC_InvId;
         ::  else ->
                 if
-                :: tasks[tid].state != Dormant ->
+                :: tasks[tid].state != Blocked ->
                     rc = RC_IncState;
                 :: else ->
                     tasks[tid].state = Ready ->
@@ -448,10 +448,10 @@ inline chooseScenario() {
 			deleteTask = true;
             suspendTask = true;
             if
-            ::  suspValId = true; resumeValId = true; // Default Parameters: suspend -> RTEMS_SUCCESSFUL; resume -> RTEMS_SUCCESSFUL
-            ::  suspValId = false; // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
+            ::  suspValId = true; resumeValId = true;   // Default Parameters: suspend -> RTEMS_SUCCESSFUL; resume -> RTEMS_SUCCESSFUL
+            ::  suspValId = false;                      // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
             ::  suspValId = false; resumeValId = false; // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INVALID_ID
-            ::  doubleSuspend = true; // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED; resume -> RTEMS_SUCCESSFUL
+            ::  doubleSuspend = true;                   // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED; resume -> RTEMS_SUCCESSFUL
             fi
     ::  else    // go with defaults
     fi
