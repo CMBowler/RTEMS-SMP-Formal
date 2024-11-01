@@ -48,6 +48,7 @@
 #include "../common/model.pml"
 
 // We use two semaphores to synchronise the tasks
+#define INVALID_ENTRY       (0)
 #define SEMA_CREATEDELETE 	(0)
 #define SEMA_TASK_START_0 	(1)
 //#define SEMA_TASKCONTROL 	(2)
@@ -60,7 +61,7 @@
 
 #define MAX_PRIO 255
 #define BAD_PRIO MAX_PRIO
-#define DEFUALT_PRIO 5
+#define DEFAULT_PRIO 5
 
 #define INVALID_ID 0
 #define RUNNER_ID 1
@@ -353,14 +354,17 @@ inline task_delete(tid, rc) {
 bool task_1_name;
 byte insertId
 byte createPrio;
-bool createValID;
+bool createValId;
 
 bool createTask;
 
 // Task Start
 byte taskEntry;
-bool startValID;
+bool startValId;
+bool startValEntry;
 bool doubleStart;
+
+bool debugger;
 
 bool startTask;
 
@@ -378,83 +382,89 @@ bool doubleSuspend;
 
 bool suspendTask;
 
-
-
-mtype = {CreateAndDestroy, TooMany, Invalid, ISRctx, InvEntry, IncState, SuspResume, MultiCore}
+mtype = {CreateDestroy, TaskStart, SuspResume, MultiCore}
 mtype scenario;
 
 inline chooseScenario() {
 
     // Defaults
     task_control = 28;	// 0001 1100 Task[1] reserved for runner.
-    task_1_name = 1;
-    createTask = true;
-	createPrio = DEFUALT_PRIO;
-	createValID = true;
 
-    startTask = false;
-	startValID = true;
+    // Task Create
+    createTask = true;
+    task_1_name = 1;
+	createPrio = DEFAULT_PRIO;
+	createValId = true;
+
+    // Start Task
+    startTask = true;
+	startValId = true;
+    startValEntry = true;
 	doubleStart = false;
 	taskEntry = SEMA_TASK_START_0;
 
-	deleteTask = false;
+    debugger = false;
 
+    // Delete Task
+	deleteTask = true;
+    deleteId = INVALID_ID;
+
+    // Suspend
     suspendTask = false;
-    suspendId = 0;
+    suspendId = INVALID_ID;
     suspValId = true;
-    resumeId = 0;
-    resumeValId = true;
     doubleSuspend = false;
+    // Resume
+    resumeId = INVALID_ID;
+    resumeValId = true;
 
     tasks[RUNNER_ID].state = Ready;
 
     if
-    ::  scenario = CreateAndDestroy;
-    //::  scenario = TooMany;
-    ::  scenario = Invalid;
-    //::  scenario = ISRctx;
-    ::  scenario = InvEntry;
-	::	scenario = IncState;
+    ::  scenario = CreateDestroy;
+    ::  scenario = TaskStart;
     ::  scenario = SuspResume;
     fi
+
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
 
+    // Create/Delete
     if
-    ::  scenario == CreateAndDestroy ->
-            startTask = true;
-			deleteTask = true;
-//    ::  scenario == TooMany ->
-//            task_control = 0;
-    ::  scenario == Invalid ->
+    ::  scenario == CreateDestroy ->
+            startTask = false; 
+            deleteTask = false;
+            // Create/Delete
             if
-            ::  task_1_name = 0;
+            ::  task_1_name = 0; atomic{printf("@@@ %d LOG Invalid Name ",_pid); printm(scenario); nl()};
             ::  createPrio = 0;
             ::  createPrio = MAX_PRIO;
-            ::  deleteId = INVALID_ID; createTask = false; deleteTask = true;
-			::	createValID = false;
-			::	startValID = false; startTask = true; deleteTask = true;
+            ::  createValId = false;
+//          ::  scenario = TooMany;
+            ::  createTask = false; deleteTask = true;
+            ::  skip;
             fi
-    //::  scenario == ISRctx -> skip;
-    ::  scenario == InvEntry ->
-			startTask = true;
-            taskEntry = 0;
-			deleteTask = true;
-	::	scenario == IncState ->
-			startTask = true;
-			doubleStart = true;
-			deleteTask = true;
-    ::  scenario == SuspResume ->
-            startTask = true;
-			deleteTask = true;
-            suspendTask = true;
+    ::  scenario == TaskStart ->
+            // Start
             if
-            ::  suspValId = true; resumeValId = true;   // Default Parameters: suspend -> RTEMS_SUCCESSFUL; resume -> RTEMS_SUCCESSFUL
-            ::  suspValId = false;                      // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
-            ::  suspValId = false; resumeValId = false; // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INVALID_ID
-            ::  doubleSuspend = true;                   // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED; resume -> RTEMS_SUCCESSFUL
+            ::  startValId = false; atomic{printf("@@@ %d LOG Invalid Start Id ",_pid); printm(scenario); nl()};
+            ::  startValEntry = false;
+            ::  taskEntry = INVALID_ENTRY;
+            ::  doubleStart = true;
+            ::  skip;
             fi
-    ::  else    // go with defaults
+    ::  scenario == SuspResume ->
+            suspendTask = true;
+            // Suspend
+            if
+            ::  startValId = false;
+            ::  suspValId = false;                  // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
+            ::  resumeValId = false;                // resume -> RTEMS_INVALID_ID
+            ::  doubleSuspend = true;               // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED;
+            ::  skip;
+            fi
+    ::  else
     fi
+
 }
 
 inline SuspendResume(suspId, resumeId) {
@@ -618,7 +628,7 @@ proctype Runner(byte nid, taskid) {
     if 
     ::  createTask == true ->
 		if
-		::	createValID == true ->
+		::	createValId == true ->
 				setTask(insertId, setRC);
 				if 
 				::	setRC == false ->
@@ -636,35 +646,43 @@ proctype Runner(byte nid, taskid) {
         task_create(nid, name, prio, preempt, insertId, setRC, createRC);
 		
 		printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
-        if 
-        ::  createRC == RC_OK ->
-repeat_start:
-				if
-				::	startValID == false ->
-						startId = 0;
-				:: 	else -> 
-						startId = insertId;
-				fi
-
-                task_start(startId, entry, startRC);
-				printf("@@@ %d CALL task_start %d %d startRC\n", 
-						_pid, startId, entry);
-				printf("@@@ %d CALL startRC %d\n", _pid, startRC);
-				if
-				::	startRC != RC_OK ->
-						Release(SEMA_CREATEDELETE);
-				:: 	doubleStart == true ->
-						if 
-						::	doubleDone == false ->
-							doubleDone = true;
-							goto repeat_start;
-						:: else
-						fi
-				:: else
-				fi
-        ::  else -> skip
-        fi
     ::  else
+    fi
+
+
+    if 
+    ::  startTask == true ->
+            if
+            ::	startValId == true ->
+                    startId = insertId;
+            :: 	startValId == false ->
+                    startId = INVALID_ID;
+            fi
+
+            if
+            ::  startValEntry == true ->
+                    entry = SEMA_TASK_START_0;
+            ::  startValEntry == false ->
+                    entry = INVALID_ENTRY;
+            fi
+repeat_start:
+            task_start(startId, entry, startRC);
+            printf("@@@ %d CALL task_start %d %d startRC\n", 
+                    _pid, startId, entry);
+            printf("@@@ %d CALL startRC %d\n", _pid, startRC);
+            if
+            ::	startRC != RC_OK ->
+                    Release(SEMA_CREATEDELETE);
+            :: 	doubleStart == true ->
+                    if 
+                    ::	doubleDone == false ->
+                        doubleDone = true;
+                        goto repeat_start;
+                    :: else
+                    fi
+            :: else
+            fi
+    ::  else -> skip
     fi
 
     if 
@@ -754,7 +772,7 @@ proctype Worker(byte delId) {
 
 proctype Task0() {
     if
-    ::  startTask == true && scenario != InvEntry ->
+    ::  startTask == true ->
             Obtain(SEMA_TASK_START_0);
 
             //Do Stuff
