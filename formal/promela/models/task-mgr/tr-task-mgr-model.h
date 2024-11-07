@@ -88,6 +88,10 @@ typedef struct {
                         rtems_id
                     );
     // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    rtems_status_code ( *t_isSuspend )(
+                        rtems_id
+                    );               
+    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
     rtems_status_code ( *t_resume )(
                         rtems_id
                     );

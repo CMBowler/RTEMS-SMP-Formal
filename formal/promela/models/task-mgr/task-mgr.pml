@@ -44,14 +44,14 @@
 
 #include "../common/rtems.pml"
 #define TASK_MAX 5 
-#define SEMA_MAX 2
+#define SEMA_MAX 3
 #include "../common/model.pml"
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
 #define SEMA_CREATEDELETE 	(0)
 #define SEMA_TASK_START_0 	(1)
-//#define SEMA_TASKCONTROL 	(2)
+#define SEMA_TASK_SUSP   	(2)
 
 /*
  * We need to output annotations for any #define we use.
@@ -147,6 +147,7 @@ byte createRC;
 byte startRC;
 byte deleteRC;
 byte suspendRC;
+byte isSuspendRC;
 byte resumeRC;
 
 byte task_id[TASK_MAX] ;
@@ -156,6 +157,7 @@ inline outputDeclarations () {
   printf("@@@ %d DECL byte startRC 0\n",_pid);
   printf("@@@ %d DECL byte deleteRC 0\n",_pid);
   printf("@@@ %d DECL byte suspendRC 0\n",_pid);
+  printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
   printf("@@@ %d DECL byte resumeRC 0\n",_pid);
   // Rather than refine an entire Task array, we refine array 'slices'
   //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
@@ -379,10 +381,11 @@ byte resumeId;
 bool suspValId;
 bool resumeValId;
 bool doubleSuspend;
+bool suspendSelf;
 
 bool suspendTask;
 
-mtype = {CreateDestroy, TaskStart, SuspResume, MultiCore}
+mtype = {CreateDestroy, TaskStart, SuspResume, SelfSusp}
 mtype scenario;
 
 inline chooseScenario() {
@@ -414,6 +417,7 @@ inline chooseScenario() {
     suspendId = INVALID_ID;
     suspValId = true;
     doubleSuspend = false;
+    suspendSelf = false;
     // Resume
     resumeId = INVALID_ID;
     resumeValId = true;
@@ -444,27 +448,26 @@ inline chooseScenario() {
             ::  skip;
             fi
     ::  scenario == TaskStart ->
+            startTask = false;
             // Start
             if
-            ::  startValId = false; atomic{printf("@@@ %d LOG Invalid Start Id ",_pid); printm(scenario); nl()};
-            ::  startValEntry = false;
-            ::  taskEntry = INVALID_ENTRY;
-            ::  doubleStart = true;
-            ::  skip;
+            ::  startValId = false;         atomic{printf("@@@ %d LOG Start: Invalid Id ",_pid); printm(scenario); nl()};
+            ::  startValEntry = false;      atomic{printf("@@@ %d LOG Start: Invalid Entry ",_pid); printm(scenario); nl()};
+            ::  doubleStart = true;         atomic{printf("@@@ %d LOG Start: Task Already Started ",_pid); printm(scenario); nl()};
+            ::  startTask = true;           atomic{printf("@@@ %d LOG Start: Success ",_pid); printm(scenario); nl()};
             fi
     ::  scenario == SuspResume ->
             suspendTask = true;
             // Suspend
             if
-            ::  startValId = false;
+            ::  startValEntry = false; startTask = false;
             ::  suspValId = false;                  // suspend -> RTEMS_INVALID_ID; resume -> RTEMS_INCORRECT_STATE
             ::  resumeValId = false;                // resume -> RTEMS_INVALID_ID
             ::  doubleSuspend = true;               // suspend -> RTEMS_SUCCESSFUL; suspend -> RTEMS_ALREADY_SUSPENDED;
+            ::  suspendSelf = true; suspendTask = false;
             ::  skip;
             fi
-    ::  else
     fi
-
 }
 
 inline SuspendResume(suspId, resumeId) {
@@ -651,7 +654,7 @@ proctype Runner(byte nid, taskid) {
 
 
     if 
-    ::  startTask == true ->
+    ::  createRC == RC_OK ->
             if
             ::	startValId == true ->
                     startId = insertId;
@@ -683,6 +686,25 @@ repeat_start:
             :: else
             fi
     ::  else -> skip
+    fi
+
+    if
+    ::  suspendSelf == true ->
+            //Resume
+            // Wait for Task 0 to self Suspend
+            printf("@@@ %d CALL WaitForSuspend %d resumeRC\n", 
+                        _pid, insertId, resumeRC);
+            do
+            ::  isSuspendRC == RC_AlrSuspd -> break;
+            ::  else -> 
+                    task_isSuspend(insertId, isSuspendRC);
+            od
+
+            printf("@@@ %d CALL task_resume %d resumeRC\n", 
+                        _pid, insertId, resumeRC);
+            task_resume(insertId, resumeRC);
+            printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
+    ::  else
     fi
 
     if 
@@ -771,15 +793,27 @@ proctype Worker(byte delId) {
 // global task variables
 
 proctype Task0() {
+    printf("@@@ %d CALL TASK_INIT %d\n",_pid, SEMA_TASK_START_0);
+
     if
     ::  startTask == true ->
             Obtain(SEMA_TASK_START_0);
 
             //Do Stuff
+            // Self Suspend:
+            if
+            ::  suspendSelf == true ->
+                    // Suspend
+                    printf("@@@ %d CALL task_suspend %d suspendRC\n", 
+                                    _pid, insertId, suspendRC);
+                    task_suspend(insertId, suspendRC);
+                    printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
+            ::  else 
+            fi
 
             // Release Semaphores
             Release(SEMA_TASK_START_0);
-			Release(SEMA_CREATEDELETE);
+            Release(SEMA_CREATEDELETE);
     ::  else -> skip
     fi
 }

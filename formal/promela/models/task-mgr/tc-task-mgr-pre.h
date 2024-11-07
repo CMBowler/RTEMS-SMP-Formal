@@ -120,6 +120,13 @@ static rtems_status_code TaskSuspend(
     return rtems_task_suspend( id );
 }
 
+static rtems_status_code IsTaskSuspended(
+    rtems_id id
+)
+{
+    return rtems_task_is_suspended( id );
+}
+
 static rtems_status_code TaskResume(
     rtems_id id 
 )

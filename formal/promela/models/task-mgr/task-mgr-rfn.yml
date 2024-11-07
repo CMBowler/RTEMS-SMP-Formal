@@ -50,6 +50,8 @@ deleteRC_DCL: rtems_status_code
 
 suspendRC_DCL: rtems_status_code
 
+isSuspendRC_DCL: rtems_status_code
+
 resumeRC_DCL: rtems_status_code
 
 taskID_DCL: rtems_id {0}[TASK_MAX];
@@ -60,6 +62,9 @@ INIT: |
   init_tid( taskID, TASK_MAX );
   initialise_semaphore( 0, ctx->runner_wakeup, semaphore );
   initialise_semaphore( 1, ctx->worker_wakeup, semaphore );
+
+TASK_INIT: |
+  T_log( T_NORMAL, "Starting Task %d", {0});
 
 Runner: |
   checkTaskIs( ctx->runner_id );
@@ -80,7 +85,7 @@ task_create: |
 
 task_start: |
   T_log( T_NORMAL, "Starting Task(%d, %d, %d)", {0}, {1}, {2});
-  {2} = ( *ctx->t_start )( taskID[{0}], {1} ? tasks[{1}] : NULL, (rtems_task_argument)(void *)(ctx) );
+  {2} = ( *ctx->t_start )( {0} ? taskID[{0}] : 0xffffffff, {1} ? tasks[{1}] : NULL, (rtems_task_argument)(void *)(ctx) );
   T_log( T_NORMAL, "Returned 0x%x from Start", {2} );
 
 task_delete: |
@@ -92,6 +97,11 @@ task_suspend: |
   T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
   {1} = ( *ctx->t_suspend )( {0} ? taskID[{0}] : 0xffffffff );
   T_log( T_NORMAL, "Returned 0x%x from Suspend", {1} );
+
+task_isSuspended: |
+  T_log( T_NORMAL, "Is Task Suspended(%d)", {0}, {1} );
+  {1} = ( *ctx->t_isSuspend )( {0} ? taskID[{0}] : 0xffffffff );
+  T_log( T_NORMAL, "Returned 0x%x from Is Suspended", {1} );
 
 task_resume: |
   T_log( T_NORMAL, "Suspending Task(%d)", {0}, {1} );
@@ -110,8 +120,18 @@ delRC: |
 suspendRC: |
   T_rsc( suspendRC, {0} );
 
+isSuspendRC: |
+  T_rsc( isSuspendRC, {0} );
+
 resumeRC: |
   T_rsc( resumeRC, {0} );
+
+WaitForSuspend: |
+  T_log( T_NORMAL, "Waiting for Task(%d) to Suspend", {0}, {1} );
+  do {{
+    {1} = ( *ctx->t_isSuspend )( {0} ? taskID[{0}] : 0xffffffff );
+    rtems_task_wake_after( 100 );
+  }} while ({1} != RTEMS_ALREADY_SUSPENDED);
 
 TooMany: |
   ctx->seized_objects = T_seize_objects( Create, ctx );
