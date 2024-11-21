@@ -10,6 +10,7 @@ T_TEST_CASE( RtemsModelTaskMgr{0} )
     TaskSuspend,
     IsTaskSuspended,
     TaskResume,
+    TaskSetPriority,
     THREAD_WAIT_CLASS_EVENT,
     STATES_WAITING_FOR_EVENT
   );

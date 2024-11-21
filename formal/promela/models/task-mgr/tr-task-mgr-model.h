@@ -96,6 +96,11 @@ typedef struct {
                         rtems_id
                     );
     // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    rtems_status_code (*t_setPriority)(
+                        rtems_id,
+                        rtems_task_priority,
+                        rtems_task_priority *
+                    );
     unsigned int wait_class; // copy of the corresponding
                             // RtemsModelEventsMgr_Run() parameter
     int waiting_for_event; // copy of the corresponding
@@ -113,8 +118,10 @@ typedef struct {
     Thread_Control *runner_thread; // TCB of the runner task
     rtems_id runner_id; // ID of the runner task
     rtems_id worker_id; // task ID of the worker task
-    rtems_id worker_wakeup; // ID of the semaphore used to wake up the worker task
+    rtems_id worker0_wakeup; // ID of the semaphore used to wake up the worker task
+    rtems_id worker1_wakeup; // ID of the semaphore used to wake up the worker task
     rtems_id runner_wakeup; // ID of the semaphore used to wake up the runner task
+    rtems_id lock_0; // ID of the semaphore used to wake up lock 0
     rtems_id runner_sched; // scheduler ID of scheduler used by the runner task
     rtems_id other_sched; // scheduler ID of another scheduler
                         // which is not used by the runner task

@@ -142,10 +142,14 @@ static void RtemsModelTaskMgr_Teardown(
     T_rsc_success( sc );
   }
 
-  T_log( T_NORMAL, "Deleting Worker ReleaseTestSyncSema Semaphore" );
-  DeleteTestSyncSema( ctx->worker_wakeup );
+  T_log( T_NORMAL, "Deleting Worker 0 ReleaseTestSyncSema Semaphore" );
+  DeleteTestSyncSema( ctx->worker0_wakeup );
+  T_log( T_NORMAL, "Deleting Worker 1 ReleaseTestSyncSema Semaphore" );
+  DeleteTestSyncSema( ctx->worker1_wakeup );
   T_log( T_NORMAL, "Deleting Runner ReleaseTestSyncSema Semaphore" );
   DeleteTestSyncSema( ctx->runner_wakeup );
+  T_log( T_NORMAL, "Deleting Lock 0 ReleaseTestSyncSema Semaphore" );
+  DeleteTestSyncSema( ctx->lock_0 );
 }
 
 void RtemsModelTaskMgr_Teardown_Wrap( void *arg )

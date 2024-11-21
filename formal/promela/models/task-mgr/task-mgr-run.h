@@ -1,20 +1,47 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 
-static void Worker{0}( rtems_task_argument arg )
+static void Worker{0}_0( rtems_task_argument arg )
 {{
   Context *ctx;
   rtems_event_set events;
 
   ctx = (Context *) arg;
 
-  T_log( T_NORMAL, "Worker Running" );
-  TestSegment4( ctx );
-  T_log( T_NORMAL, "Worker finished" );
+#ifdef TASK_0
+    T_log( T_NORMAL, "Worker 0 Running" );
+    TestSegment4( ctx );
+    T_log( T_NORMAL, "Worker 0 finished" );
+#endif
+  // (void) rtems_task_suspend( RTEMS_SELF );
+  // Ensure we hold no semaphores
+  ReleaseTestSyncSema( ctx->worker0_wakeup );
+  ReleaseTestSyncSema( ctx->worker1_wakeup );
+  ReleaseTestSyncSema( ctx->runner_wakeup );
+  ReleaseTestSyncSema( ctx->lock_0 );
+  
+  // Wait for events so we don't terminate
+  rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
+
+}}
+
+static void Worker{0}_1( rtems_task_argument arg )
+{{
+  Context *ctx;
+  rtems_event_set events;
+
+  ctx = (Context *) arg;
+#ifdef TASK_1
+    T_log( T_NORMAL, "Worker 1 Running" );
+    TestSegment5( ctx );
+    T_log( T_NORMAL, "Worker 1 finished" );
+#endif
 
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  ReleaseTestSyncSema( ctx->worker_wakeup );
+  ReleaseTestSyncSema( ctx->worker0_wakeup );
+  ReleaseTestSyncSema( ctx->worker1_wakeup );
   ReleaseTestSyncSema( ctx->runner_wakeup );
+  ReleaseTestSyncSema( ctx->lock_0 );
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
 
@@ -40,13 +67,18 @@ static void RtemsModelTaskMgr_Setup{0}(
   ctx->runner_thread = _Thread_Get_executing();
   ctx->runner_id = ctx->runner_thread->Object.id;
 
-  T_log( T_NORMAL, "Creating Worker TestSync Semaphore" );
-  ctx->worker_wakeup = CreateTestSyncSema( "WRKR" );
+  T_log( T_NORMAL, "Creating Worker 0 TestSync Semaphore" );
+  ctx->worker0_wakeup = CreateTestSyncSema( "WRK0" );
+  T_log( T_NORMAL, "Creating Worker 1 TestSync Semaphore" );
+  ctx->worker1_wakeup = CreateTestSyncSema( "WRK1" );
   T_log( T_NORMAL, "Creating Runner TestSync Semaphore" );
   ctx->runner_wakeup = CreateTestSyncSema( "RUNR" );
+  T_log( T_NORMAL, "Creating Lock 0 TestSync Semaphore" );
+  ctx->lock_0 = CreateTestSyncSema( "MTX0" );
 
   // Add worker to the taskId array:
-  tasks[1] = Worker{0};
+  tasks[1] = Worker{0}_0;
+  tasks[2] = Worker{0}_1;
 
   
 }}
@@ -97,6 +129,11 @@ void RtemsModelTaskMgr_Run{0}(
   rtems_status_code ( *t_resume )(
                         rtems_id
                     ),
+  rtems_status_code ( *t_setPriority )(
+                        rtems_id,
+                        rtems_task_priority,
+                        rtems_task_priority *
+                    ),
   unsigned int         wait_class,
   int                  waiting_for_event
 )
@@ -128,8 +165,9 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->t_start = t_start;
   ctx->t_delete = t_delete;
   ctx->t_suspend = t_suspend;
-  ctx->t_resume = t_resume;
   ctx->t_isSuspend = t_isSuspend;
+  ctx->t_resume = t_resume;
+  ctx->t_setPriority = t_setPriority;
 
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;
@@ -154,7 +192,7 @@ void RtemsModelTaskMgr_Run{0}(
   RtemsModelTaskMgr_Cleanup( ctx );
 
   T_log( T_NORMAL, "Run Pop Fixture" );
-  ShowWorkerSemaId( ctx->worker_id, ctx->worker_wakeup );
+  ShowWorkerSemaId( ctx->worker_id, ctx->worker0_wakeup );
   T_pop_fixture();
   
 }}

@@ -44,14 +44,17 @@
 
 #include "../common/rtems.pml"
 #define TASK_MAX 5 
-#define SEMA_MAX 3
+#define SEMA_MAX 4
 #include "../common/model.pml"
+
+#define NUM_PROC 5
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
-#define SEMA_CREATEDELETE 	(0)
+#define SEMA_CREATEDELETE 	(0) // Model Specific Lock
 #define SEMA_TASK_START_0 	(1)
-#define SEMA_TASK_SUSP   	(2)
+#define SEMA_TASK_START_1  	(2)
+#define SEMA_LOCK           (3)
 
 /*
  * We need to output annotations for any #define we use.
@@ -61,48 +64,38 @@
 
 #define MAX_PRIO 255
 #define BAD_PRIO MAX_PRIO
-#define DEFAULT_PRIO 5
+#define CURRENT_PRIO 0
+#define LOW_PRIO 1
+#define MED_PRIO 5
+#define HIGH_PRIO 10
 
 #define INVALID_ID 0
 #define RUNNER_ID 1
+#define TASK0_ID 2
+#define TASK1_ID 3
 
 #define CLEAR_TASKS 255
 byte task_control = CLEAR_TASKS;
 
 /*
  * Running Orders (maintained by simple global sync counter):
- *   Receive;;Send  =  Receive;Release(1) || Obtain(1);Send
+ *   Receive;;Send  =  Receive;TestSyncRelease(1) || TestSyncObtain(1);Send
  * Here ;; is "sequential" composition of *different* threads
  */
 bool semaphore[SEMA_MAX]; // Semaphore
 
-/*
- * Synchronisation Mechanisms
- *  Obtain(sem_id)   - call that waits to obtain semaphore `sem_id`
- *  Release(sem_id)  - call that releases semaphore `sem_id`
- *  Released(sem_id) - simulates ecosystem behaviour releases `sem_id`
- *
- * Binary semaphores:  True means available, False means in use.
- */
-inline Obtain(sem_id){
-  atomic{
-    printf("@@@ %d WAIT %d\n",_pid,sem_id);
-    semaphore[sem_id] ;        // wait until available
-    semaphore[sem_id] = false; // set as in use
-    printf("@@@ %d LOG WAIT %d Over\n",_pid,sem_id);
-  }
+inline ObtainMutex(tid, sid) {
+    TestSyncObtain(sid);
+    tasks[tid].mutexs[sid] = 1;
 }
 
-inline Release(sem_id){
-  atomic{
-    printf("@@@ %d SIGNAL %d\n",_pid,sem_id);
-    semaphore[sem_id] = true ; // release
-  }
-}
-
-inline Released(sem_id)
-{
-  semaphore[sem_id] = true ;
+inline ReleaseMutex(tid, sid) { 
+    if
+    ::  tasks[tid].mutexs[sid] == 1 ->
+            TestSyncRelease(sid);
+            //rc = true;
+    ::  else //-> rc = false
+    fi
 }
 
 inline outputDefines () {
@@ -110,6 +103,11 @@ inline outputDefines () {
 	printf("@@@ %d DEF TASK_MAX %d\n",_pid,TASK_MAX);
 	printf("@@@ %d DEF INVALID_ID %d\n",_pid,INVALID_ID);
 	printf("@@@ %d DEF SEMA_MAX %d\n",_pid,SEMA_MAX);
+
+    // Priority inversion
+    printf("@@@ %d DEF LOW_PRIO %d\n",_pid,HIGH_PRIO);
+    printf("@@@ %d DEF MED_PRIO %d\n",_pid,MED_PRIO);
+    printf("@@@ %d DEF HIGH_PRIO %d\n",_pid,LOW_PRIO);
 	
 	printf("@@@ %d DEF RC_OK RTEMS_SUCCESSFUL\n",_pid);
 	printf("@@@ %d DEF RC_InvId RTEMS_INVALID_ID\n",_pid);
@@ -135,6 +133,7 @@ typedef Task {
   int ticks;    //
   bool tout;    // true if woken by a timeout
   bool isr;     // If task is woken from Interrupt context
+  bool mutexs[SEMA_MAX]; // List of Semaphores the task is currently holding.
 };
 
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
@@ -152,6 +151,12 @@ byte resumeRC;
 
 byte task_id[TASK_MAX] ;
 
+/*
+inline isTaskHolding(tid) {
+    
+}
+//*/
+
 inline outputDeclarations () {
   printf("@@@ %d DECL byte createRC 0\n",_pid);
   printf("@@@ %d DECL byte startRC 0\n",_pid);
@@ -159,6 +164,7 @@ inline outputDeclarations () {
   printf("@@@ %d DECL byte suspendRC 0\n",_pid);
   printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
   printf("@@@ %d DECL byte resumeRC 0\n",_pid);
+  printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
   // Rather than refine an entire Task array, we refine array 'slices'
   //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
   //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
@@ -179,10 +185,10 @@ inline isNameValid(name, rc) {
 
 inline setTask(tid, rc) {
     byte raw_tid;
-    //Obtain(SEMA_TASKCONTROL);
+    //TestSyncObtain(SEMA_TASKCONTROL);
     raw_tid = task_control & (~task_control + 1);
     task_control = task_control - raw_tid;
-    //Release(SEMA_TASKCONTROL);
+    //TestSyncRelease(SEMA_TASKCONTROL);
     rc = true;
     if
     ::  raw_tid == 2 ->
@@ -213,9 +219,9 @@ inline task_create(nid, name, prio, preempt, tid, tidRC, rc) {
 		::	name == 0 ->
 				rc = RC_InvName;
         ::  prio == 0 ->
-                rc = RC_InvPrio
+                rc = RC_InvPrio;
         ::  prio >= BAD_PRIO ->
-                rc = RC_InvPrio
+                rc = RC_InvPrio;
 		::  tidRC == false ->
                 rc = RC_TooMany;
 		::	tid == 0 ->
@@ -249,7 +255,7 @@ inline task_start(tid, entry, rc) {
 							tasks[tid].state = Ready;
 							tasks[tid].start = entry;
 							// Start Task Model
-							Release(entry);
+							TestSyncRelease(entry);
 							rc = RC_OK;
 						fi
 				fi
@@ -305,7 +311,7 @@ inline task_resume(tid, rc) {
 
 inline removeTask(tid, rc) {
     byte raw_tid = 1 << tid;
-    //Obtain(SEMA_TASKCONTROL);
+    //TestSyncObtain(SEMA_TASKCONTROL);
     if
     ::  (task_control & raw_tid) != raw_tid ->
             task_control = task_control + raw_tid;
@@ -313,7 +319,7 @@ inline removeTask(tid, rc) {
     ::  (task_control & raw_tid) == raw_tid ->
             rc = false;
     fi
-    //Release(SEMA_TASKCONTROL);
+    //TestSyncRelease(SEMA_TASKCONTROL);
 }
 
 ///*
@@ -350,10 +356,45 @@ inline task_delete(tid, rc) {
 }
 //*/
 
+
+inline task_setPrio(tid, new, old, rc) {
+    atomic {
+        if
+        ::  tasks[tid].state == Zombie ->
+                rc = RC_InvId;
+        ::  old == INVALID_ID ->
+                rc = RC_InvAddr;
+        ::  else ->
+                if
+                ::  new > MAX_PRIO ->
+                        rc = RC_InvPrio;
+                ::  new == CURRENT_PRIO ->
+                        old = tasks[tid].prio;
+                        rc = RC_OK;
+                ::  else ->
+                        old = tasks[tid].prio;
+                        if
+                        ::  new <= old -> skip
+                        ::  else ->
+                        // If the task is currently holding any binary semaphores 
+                        // which use a locking protocol, then the task’s priority cannot be lowered immediately
+                                
+                        fi
+                        tasks[tid].prio = new;
+                        set_priority(tasks[tid].pmlid, new); //TODO
+                        rc = RC_OK;
+                fi
+        fi
+    }
+}
+
+//inline task_getPrio (tid, sched, prio)
+
+
 //mtype = {Resume, Suspend, ResSpnd, SpndRes, ResRes, SpndSpnd}
 
 // Task Create
-bool task_1_name;
+bool task_0_name;
 byte insertId
 byte createPrio;
 bool createValId;
@@ -365,8 +406,6 @@ byte taskEntry;
 bool startValId;
 bool startValEntry;
 bool doubleStart;
-
-bool debugger;
 
 bool startTask;
 
@@ -385,7 +424,16 @@ bool suspendSelf;
 
 bool suspendTask;
 
-mtype = {CreateDestroy, TaskStart, SuspResume, SelfSusp}
+// Priority
+
+byte task_1_name;
+byte tsk1_ID;
+byte task_1_Entry;
+
+bool testPrio;
+
+
+mtype = {CreateDestroy, TaskStart, SuspResume, ChangePrio}
 mtype scenario;
 
 inline chooseScenario() {
@@ -395,8 +443,8 @@ inline chooseScenario() {
 
     // Task Create
     createTask = true;
-    task_1_name = 1;
-	createPrio = DEFAULT_PRIO;
+    task_0_name = 1;
+	createPrio = MED_PRIO;
 	createValId = true;
 
     // Start Task
@@ -405,8 +453,6 @@ inline chooseScenario() {
     startValEntry = true;
 	doubleStart = false;
 	taskEntry = SEMA_TASK_START_0;
-
-    debugger = false;
 
     // Delete Task
 	deleteTask = true;
@@ -422,12 +468,19 @@ inline chooseScenario() {
     resumeId = INVALID_ID;
     resumeValId = true;
 
+    // Priority
+    task_1_name = 2;
+    task_1_Entry = SEMA_TASK_START_1;
+
+    testPrio = false;
+
     tasks[RUNNER_ID].state = Ready;
 
     if
     ::  scenario = CreateDestroy;
     ::  scenario = TaskStart;
     ::  scenario = SuspResume;
+    ::  scenario = ChangePrio;
     fi
 
     atomic{printf("@@@ %d LOG scenario ",_pid); printm(scenario); nl()} ;
@@ -439,13 +492,13 @@ inline chooseScenario() {
             deleteTask = false;
             // Create/Delete
             if
-            ::  task_1_name = 0; atomic{printf("@@@ %d LOG Invalid Name ",_pid); printm(scenario); nl()};
+            ::  task_0_name = 0; atomic{printf("@@@ %d LOG Invalid Name ",_pid); printm(scenario); nl()};
             ::  createPrio = 0;
             ::  createPrio = MAX_PRIO;
             ::  createValId = false;
 //          ::  scenario = TooMany;
             ::  createTask = false; deleteTask = true;
-            ::  skip;
+            ::  deleteTask = true;
             fi
     ::  scenario == TaskStart ->
             startTask = false;
@@ -467,6 +520,9 @@ inline chooseScenario() {
             ::  suspendSelf = true; suspendTask = false;
             ::  skip;
             fi
+    ::  scenario == ChangePrio ->
+            testPrio = true;
+            //suspendSelf = true;
     fi
 }
 
@@ -520,18 +576,18 @@ proctype System () {
   taskid = 1;
   liveSeen = false;
 
-  printf("@@@ %d LOG Loop through tasks...\n",_pid);
-  atomic {
-    printf("@@@ %d LOG Scenario is ",_pid);
-    printm(scenario); nl();
-  }
+//  printf("@@@ %d LOG Loop through tasks...\n",_pid);
+//  atomic {
+    //printf("@@@ %d LOG Scenario is ",_pid);
+    //printm(scenario); nl();
+//  }
   do   // while taskid < TASK_MAX ....
   ::  taskid == TASK_MAX -> break;
   ::  else ->
-      atomic {
-        printf("@@@ %d LOG Task %d state is ",_pid,taskid);
-        printm(tasks[taskid].state); nl()
-      }
+//      atomic {
+        //printf("@@@ %d LOG Task %d state is ",_pid,taskid);
+        //printm(tasks[taskid].state); nl()
+//      }
       if
       :: tasks[taskid].state == Zombie -> taskid++
       :: else ->
@@ -546,7 +602,7 @@ proctype System () {
       fi
   od
 
-  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
+  //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
 
   if
   ::  liveSeen -> goto loop
@@ -600,6 +656,7 @@ stopped:
 }
 
 proctype Runner(byte nid, taskid) {
+    assert(_priority == MED_PRIO)
     /*
     if
     :: multicore ->
@@ -608,14 +665,13 @@ proctype Runner(byte nid, taskid) {
     :: else
     fi
     */
-
     // Runner Task Params
     tasks[taskid].nodeid = nid;
     tasks[taskid].pmlid = _pid;
     tasks[taskid].state = Ready;
 
 	// Task 0 Create Params
-	byte name = task_1_name;
+	byte name = task_0_name;
     byte prio = createPrio;
     byte preempt = true;
 	byte mode = 0;
@@ -654,7 +710,7 @@ proctype Runner(byte nid, taskid) {
 
 
     if 
-    ::  createRC == RC_OK ->
+    ::  startTask == true ->
             if
             ::	startValId == true ->
                     startId = insertId;
@@ -675,7 +731,7 @@ repeat_start:
             printf("@@@ %d CALL startRC %d\n", _pid, startRC);
             if
             ::	startRC != RC_OK ->
-                    Release(SEMA_CREATEDELETE);
+                    TestSyncRelease(SEMA_CREATEDELETE);
             :: 	doubleStart == true ->
                     if 
                     ::	doubleDone == false ->
@@ -685,6 +741,22 @@ repeat_start:
                     fi
             :: else
             fi
+    ::  else -> skip
+    fi
+
+    if
+    ::  testPrio == true ->
+            // Create and Start New Task (1)
+            setTask(tsk1_ID, setRC);
+            printf("@@@ %d CALL task_create %d %d %d %d %d createRC\n", 
+                    _pid, task_1_name, prio, mode, attr, tsk1_ID);
+            task_create(nid, task_1_name, prio, preempt, tsk1_ID, setRC, createRC);
+            printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
+            //
+            task_start(tsk1_ID, task_1_Entry, startRC);
+            printf("@@@ %d CALL task_start %d %d startRC\n", 
+                    _pid, tsk1_ID, task_1_Entry);
+            printf("@@@ %d CALL startRC %d\n", _pid, startRC);
     ::  else -> skip
     fi
 
@@ -708,10 +780,10 @@ repeat_start:
     fi
 
     if 
-	::	startTask == true ->
-	    	Obtain(SEMA_CREATEDELETE);
-	::	else
-	fi
+    ::	startTask == true ->
+            TestSyncObtain(SEMA_CREATEDELETE);
+    ::	else
+    fi
 
     if
     ::  suspendTask == true ->
@@ -742,8 +814,19 @@ repeat_start:
             task_delete(deleteId, deleteRC);
 
             printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
+
+            if
+            ::  testPrio == true ->
+                    printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, tsk1_ID);
+			
+                    task_delete(tsk1_ID, deleteRC);
+
+                    printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
+            ::  else
+            fi
     ::  else 
     fi
+
 
     // Once done, free runner task model id:
     bool runRC;
@@ -756,50 +839,37 @@ repeat_start:
 
 }
 
-/*
-proctype Worker(byte delId) {
+// global task variables
 
+proctype Task0(byte taskid) priority MED_PRIO {
+    assert(_priority == MED_PRIO)
+    /*
     if
     :: multicore ->
         // printf("@@@ %d CALL RunnerScheduler %d\n", _pid, rcvCore);
         printf("@@@ %d CALL SetProcessor %d\n", _pid, rcvCore);
     :: else
     fi
-
-	if 
-	::	startTask == true ->
-	    	Obtain(SEMA_CREATEDELETE);
-	::	else
-	fi
-
-    if
-    ::  createTask == true ->
-            deleteId = insertId;
-    ::  else
-    fi
-
-    if
-    ::  deleteTask == true -> 
-			printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, deleteId);
-			
-            task_delete(deleteId, deleteRC);
-
-            printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
-    ::  else 
-    fi
-}
-*/
-
-// global task variables
-
-proctype Task0() {
-    printf("@@@ %d CALL TASK_INIT %d\n",_pid, SEMA_TASK_START_0);
+    */
 
     if
     ::  startTask == true ->
-            Obtain(SEMA_TASK_START_0);
+            TestSyncObtain(SEMA_TASK_START_0);
+            TestSyncRelease(SEMA_TASK_START_0);
+
+            tasks[taskid].pmlid = _pid;
+            //set_priority(_pid, tasks[taskid].prio)
 
             //Do Stuff
+
+            // Priority Changing 
+            if 
+            ::  testPrio == true ->
+                    // Obtain Mutex:
+                    ObtainMutex(taskid, SEMA_LOCK);
+            ::  else
+            fi
+
             // Self Suspend:
             if
             ::  suspendSelf == true ->
@@ -810,15 +880,88 @@ proctype Task0() {
                     printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
             ::  else 
             fi
+            
+            if
+            ::  testPrio == true ->
+                    byte setPriorityRC;
+                    byte old_prio = 1;
+                    
+                    printf("@@@ %d DECL byte priority 0\n",_pid);
 
+
+                    // Check Priority
+                    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                                            _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+                    task_setPrio(taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+
+                    // Chage Priority to High
+                    printf("@@@ %d CALL task_setPriority %d LOW_PRIO %d setPriorityRC\n", 
+                                            _pid, taskid, LOW_PRIO, old_prio, setPriorityRC);
+                    task_setPrio(taskid, LOW_PRIO, old_prio, setPriorityRC);
+                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+
+                    // Check Priority
+                    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                                            _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+                    task_setPrio(taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+            
+                    // Release Mutex:
+                    ReleaseMutex(taskid, SEMA_LOCK);         
+            ::  else -> skip
+            fi
             // Release Semaphores
-            Release(SEMA_TASK_START_0);
-            Release(SEMA_CREATEDELETE);
+            TestSyncRelease(SEMA_CREATEDELETE);
     ::  else -> skip
     fi
 }
 
-init {
+proctype Task1(byte taskid) {
+    assert(_priority == MED_PRIO)
+    if
+    ::  testPrio == true ->
+            byte setPriorityRC;
+            byte old_prio = 1;
+
+            TestSyncObtain(SEMA_TASK_START_1);
+            TestSyncRelease(SEMA_TASK_START_1);
+
+            tasks[taskid].pmlid = _pid;
+            //set_priority(_pid, tasks[taskid].prio)
+            
+            printf("@@@ %d DECL byte priority 0\n",_pid);
+
+
+            // Check Priority
+            printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                                    _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+            task_setPrio(taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+
+            // Chage Priority to High
+            printf("@@@ %d CALL task_setPriority %d HIGH_PRIO %d setPriorityRC\n", 
+                                    _pid, taskid, HIGH_PRIO, old_prio, setPriorityRC);
+            task_setPrio(taskid, HIGH_PRIO, old_prio, setPriorityRC);
+            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+
+            // Check Priority
+            printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                                    _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+            task_setPrio(taskid, CURRENT_PRIO, old_prio, setPriorityRC);
+            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+
+            // Obtain Mutex:
+            ObtainMutex(taskid, SEMA_LOCK);
+
+            // Release Mutex:
+            ReleaseMutex(taskid, SEMA_LOCK);
+        
+    ::  else
+    fi
+}
+
+init priority MED_PRIO{
 	pid nr;
 
 	printf("Task Manager Model running.\n");
@@ -834,15 +977,30 @@ init {
 
 	printf("Run...\n");
 
+
+    if 
+    ::  startTask == true ->
+            printf("@@@ %d DEF TASK_0 %d\n",_pid,startTask);
+    ::  else
+    fi
+    if
+    ::  testPrio == true ->
+            printf("@@@ %d DEF TASK_1 %d\n",_pid,testPrio);
+    ::  else
+    fi
+
 	run System();
 	run Clock();
+
+    TestSyncRelease(SEMA_LOCK);
 	
-	run Runner(0, RUNNER_ID);
-	run Task0();
+    run Runner(0, RUNNER_ID) priority MED_PRIO;
+    run Task0(TASK0_ID) priority MED_PRIO;
+    run Task1(TASK1_ID) priority MED_PRIO;
 
 	_nr_pr == 1;
 
-	#ifdef TEST_GEN
+	#ifdef TESTGEN
 	assert(false);
 	#endif
 

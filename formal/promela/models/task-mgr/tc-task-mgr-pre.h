@@ -133,3 +133,15 @@ static rtems_status_code TaskResume(
 {
     return rtems_task_resume( id );
 }
+
+static rtems_status_code TaskSetPriority(
+    rtems_id             id,
+    rtems_task_priority  new_priority,
+    rtems_task_priority *old_priority
+)
+{
+    return rtems_task_set_priority( id, 
+                                    new_priority, 
+                                    old_priority
+                                );
+}
