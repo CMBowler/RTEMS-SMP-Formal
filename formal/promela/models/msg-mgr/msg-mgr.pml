@@ -65,16 +65,7 @@ inline outputDefines() {
 
 mtype{ MsgWait } ;// need to know when Blocked waiting for message
 
-// Tasks
-typedef Task {
-  byte nodeid; // So we can spot remote calls
-  byte pmlid; // Promela process id
-  mtype state ; // {Ready,EventWait,TickWait,OtherWait}
-  bool preemptable ;
-  byte prio ; // lower number is higher priority
-  int ticks; //
-  bool tout; // true if woken by a timeout
-  // Message Model related
+typedef MsgState{
   int rcvInterval; //how many ticks to wait
   int rcvMsg; //hold value of message received, modelling receive buffer
   int sndMsg; //hold value of message to send, modelling send buffer
@@ -88,8 +79,7 @@ typedef Task {
   bool doWait; //whether task should wait message
 };
 
-Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
-
+MsgState msgstate[TASK_MAX]; // msgstate[0] models a NULL dereference
 
 byte sendrc;            // Sender global variable
 byte recrc;             // Receiver global variable
@@ -215,24 +205,6 @@ inline outputDeclarations () {
 }
 
 
-/*
- * waitUntilReady(id) logs that task[id] is waiting,
- * and then attempts to execute a statement that blocks,
- * until some other process changes task[id]'s state to Ready.
- * It relies on the fact that if a statement blocks inside an atomic block,
- * the block loses its atomic behaviour and yields to other Promela processes
- *
- * It is used to model a task that has been suspended for any reason.
- */
-inline waitUntilReady(id){
-  atomic{
-    printf("@@@ %d LOG Task %d waiting, state = ",_pid,id);
-    printm(tasks[id].state); nl()
-  }
-  tasks[id].state == Ready; // breaks out of atomics if false
-  printf("@@@ %d STATE %d Ready\n",_pid,id)
-}
-
 
 /* message_queue_create()
 * creates a message queue object from passed parameters
@@ -297,8 +269,8 @@ inline message_queue_send(self,qid,msg,size,rc) {
                   dequeueTask(queuedTask,qid);
                   enqueueMessage(qid,msg);
                   printf("@@@ %d LOG Send to task %d\n",_pid, queuedTask)
-                  //tasks[queuedTask].rcvMsg = msg;
-                  //printf("%d rcv msg %d",_pid,tasks[queuedTask].rcvMsg)
+                  //msgstate[queuedTask].rcvMsg = msg;
+                  //printf("%d rcv msg %d",_pid,msgstate[queuedTask].rcvMsg)
                   tasks[queuedTask].state = Ready
                   printf("@@@ %d STATE %d Ready\n",_pid, queuedTask)
                   rc = RC_OK;
@@ -318,18 +290,18 @@ inline message_queue_receive(self,qid,msg,rc) {
     :: else -> 
       dequeueMessage(qid,msg);
       if
-      :: msg == 0 && !tasks[self].doWait -> 
+      :: msg == 0 && !msgstate[self].doWait -> 
         rc = RC_Unsat; printf("@@@ %d LOG Receive Not Satisfied (no wait)\n",_pid)
-      :: msg == 0 && tasks[self].doWait ->
+      :: msg == 0 && msgstate[self].doWait ->
         printf("@@@ %d LOG Receive Not Satisfied (timeout %d)\n",
                 _pid,
-                tasks[self].rcvInterval);
-        tasks[self].ticks = tasks[self].rcvInterval;
+                msgstate[self].rcvInterval);
+        tasks[self].ticks = msgstate[self].rcvInterval;
         tasks[self].tout = false;
         printf("@@@ %d STATE %d TimeWait %d\n",
                 _pid,
                 self,
-                tasks[self].rcvInterval);
+                msgstate[self].rcvInterval);
         tasks[self].state = TimeWait;
         enqueueTask(self,qid);
         waitUntilReady(self);
@@ -390,7 +362,6 @@ int queueId;
 
 
 mtype = {Send,Receive,SndRcv, RcvSnd};
-mtype scenario;
 
 inline chooseScenario() {
 
@@ -402,7 +373,7 @@ inline chooseScenario() {
   rcvSema1 = 1;
   rcvSema2 = 2;
   startSema = sendSema;
-  tasks[SEND_ID].doCreate = true;
+  msgstate[SEND_ID].doCreate = true;
 
   //Queue parameters
   queueCreated = false;
@@ -410,13 +381,13 @@ inline chooseScenario() {
 
   msize = MAX_MESSAGE_SIZE;
   //set up defaults
-  tasks[SEND_ID].numSends = 1;
-  tasks[SEND_ID].sndMsg = 1;
-  tasks[SEND_ID].targetQueue = queueId;
-  tasks[RCV1_ID].targetQueue = queueId;
-  tasks[RCV2_ID].targetQueue = queueId;
-  tasks[SEND_ID].sndMsg = 1;
-  tasks[SEND_ID].msgSize = MAX_MESSAGE_SIZE;
+  msgstate[SEND_ID].numSends = 1;
+  msgstate[SEND_ID].sndMsg = 1;
+  msgstate[SEND_ID].targetQueue = queueId;
+  msgstate[RCV1_ID].targetQueue = queueId;
+  msgstate[RCV2_ID].targetQueue = queueId;
+  msgstate[SEND_ID].sndMsg = 1;
+  msgstate[SEND_ID].msgSize = MAX_MESSAGE_SIZE;
 
 
   //select scenario
@@ -434,89 +405,89 @@ inline chooseScenario() {
 
   if
   :: scenario == Send ->
-        tasks[RCV1_ID].doReceive = false;
-        tasks[RCV2_ID].doReceive = false;
-        tasks[SEND_ID].doSend = true;
+        msgstate[RCV1_ID].doReceive = false;
+        msgstate[RCV2_ID].doReceive = false;
+        msgstate[SEND_ID].doSend = true;
         if
-        ::  tasks[SEND_ID].targetQueue = 0;
+        ::  msgstate[SEND_ID].targetQueue = 0;
             printf("@@@ %d LOG sub-scenario Send Bad ID\n", _pid)
-        ::  tasks[SEND_ID].targetQueue = queueId;
+        ::  msgstate[SEND_ID].targetQueue = queueId;
             printf("@@@ %d LOG sub-scenario Send Success\n", _pid)
-        ::  tasks[SEND_ID].msgSize = MAX_MESSAGE_SIZE + 1;
+        ::  msgstate[SEND_ID].msgSize = MAX_MESSAGE_SIZE + 1;
             printf("@@@ %d LOG sub-scenario Send Size Error\n", _pid)
-        ::  tasks[SEND_ID].sndMsg = 0;
+        ::  msgstate[SEND_ID].sndMsg = 0;
             printf("@@@ %d LOG sub-scenario Buffer Address Error\n", _pid)
-        ::  tasks[SEND_ID].numSends = MAX_PENDING_MESSAGES + 1;
+        ::  msgstate[SEND_ID].numSends = MAX_PENDING_MESSAGES + 1;
             printf("@@@ %d LOG sub-scenario Too Many messages Error\n", _pid)         
         fi
 
   :: scenario == Receive ->
-        tasks[SEND_ID].doSend = false;
-        tasks[RCV1_ID].doReceive = true;
-        tasks[RCV2_ID].doReceive = false;
+        msgstate[SEND_ID].doSend = false;
+        msgstate[RCV1_ID].doReceive = true;
+        msgstate[RCV2_ID].doReceive = false;
         startSema = rcvSema1;
         
         if
-        ::  tasks[RCV1_ID].doWait = false;
+        ::  msgstate[RCV1_ID].doWait = false;
             if
-            ::  tasks[RCV1_ID].targetQueue = 0;
+            ::  msgstate[RCV1_ID].targetQueue = 0;
                 printf("@@@ %d LOG sub-scenario Rcv Bad ID No Wait\n", _pid)
-            ::  tasks[SEND_ID].targetQueue = queueId;
-                printf("@@@ %d LOG sub-scenario Rcv Success No Wait\n", _pid, tasks[RCV1_ID].doWait, tasks[RCV1_ID].rcvInterval)
+            ::  msgstate[SEND_ID].targetQueue = queueId;
+                printf("@@@ %d LOG sub-scenario Rcv Success No Wait\n", _pid, msgstate[RCV1_ID].doWait, msgstate[RCV1_ID].rcvInterval)
             fi 
-        ::  tasks[RCV1_ID].doWait = true; tasks[RCV1_ID].rcvInterval = 5;
-            printf("@@@ %d LOG sub-scenario Rcv Success wait:%d interval:%d\n", _pid, tasks[RCV1_ID].doWait, tasks[RCV1_ID].rcvInterval)
+        ::  msgstate[RCV1_ID].doWait = true; msgstate[RCV1_ID].rcvInterval = 5;
+            printf("@@@ %d LOG sub-scenario Rcv Success wait:%d interval:%d\n", _pid, msgstate[RCV1_ID].doWait, msgstate[RCV1_ID].rcvInterval)
         fi
         
         /*
         if
-        ::  tasks[RCV2_ID].doWait = false;  
-        ::  tasks[RCV2_ID].doWait = true; tasks[RCV2_ID].rcvInterval = 5;
+        ::  msgstate[RCV2_ID].doWait = false;  
+        ::  msgstate[RCV2_ID].doWait = true; msgstate[RCV2_ID].rcvInterval = 5;
         fi
-        printf("@@@ %d LOG sub-scenario Receive2 wait:%d interval:%d\n", _pid, tasks[RCV2_ID].doWait, tasks[RCV2_ID].rcvInterval)
+        printf("@@@ %d LOG sub-scenario Receive2 wait:%d interval:%d\n", _pid, msgstate[RCV2_ID].doWait, msgstate[RCV2_ID].rcvInterval)
         */
 
   :: scenario == SndRcv ->
 
         if
-        ::  tasks[SEND_ID].numSends = 2;     
-        ::  tasks[SEND_ID].numSends = 1;
+        ::  msgstate[SEND_ID].numSends = 2;     
+        ::  msgstate[SEND_ID].numSends = 1;
         fi
         printf("@@@ %d LOG sub-scenario SndRcv numSends:%d\n", 
                 _pid, 
-                tasks[SEND_ID].numSends
+                msgstate[SEND_ID].numSends
                 )
         /* 
         if
-        ::  tasks[RCV1_ID].doWait = false;      
-        ::  tasks[RCV1_ID].doWait = true; tasks[RCV1_ID].rcvInterval = 5;
+        ::  msgstate[RCV1_ID].doWait = false;      
+        ::  msgstate[RCV1_ID].doWait = true; msgstate[RCV1_ID].rcvInterval = 5;
         fi
-        printf("@@@ %d LOG sub-scenario Receive1 wait:%d interval:%d\n", _pid, tasks[RCV1_ID].doWait, tasks[RCV1_ID].rcvInterval)
+        printf("@@@ %d LOG sub-scenario Receive1 wait:%d interval:%d\n", _pid, msgstate[RCV1_ID].doWait, msgstate[RCV1_ID].rcvInterval)
         if
-        ::  tasks[RCV2_ID].doWait = false;      
-        ::  tasks[RCV2_ID].doWait = true; tasks[RCV2_ID].rcvInterval = 5;
+        ::  msgstate[RCV2_ID].doWait = false;      
+        ::  msgstate[RCV2_ID].doWait = true; msgstate[RCV2_ID].rcvInterval = 5;
         fi
-        printf("@@@ %d LOG sub-scenario Receive2 wait:%d interval:%d\n", _pid, tasks[RCV2_ID].doWait, tasks[RCV2_ID].rcvInterval)
+        printf("@@@ %d LOG sub-scenario Receive2 wait:%d interval:%d\n", _pid, msgstate[RCV2_ID].doWait, msgstate[RCV2_ID].rcvInterval)
         */
         
-        tasks[SEND_ID].doSend = true;
-        tasks[RCV1_ID].doReceive = true;
-        tasks[RCV2_ID].doReceive = true;
+        msgstate[SEND_ID].doSend = true;
+        msgstate[RCV1_ID].doReceive = true;
+        msgstate[RCV2_ID].doReceive = true;
 
   :: scenario == RcvSnd ->
         startSema = rcvSema1;
-        tasks[SEND_ID].doSend = true;
-        tasks[RCV1_ID].doReceive = true;
-        tasks[RCV1_ID].doWait = true;
-        tasks[RCV1_ID].rcvInterval = 5;
-        tasks[RCV2_ID].doReceive = false;
-        //tasks[SEND_ID].numSends = 2
+        msgstate[SEND_ID].doSend = true;
+        msgstate[RCV1_ID].doReceive = true;
+        msgstate[RCV1_ID].doWait = true;
+        msgstate[RCV1_ID].rcvInterval = 5;
+        msgstate[RCV2_ID].doReceive = false;
+        //msgstate[SEND_ID].numSends = 2
         /*
         if
-        :: tasks[RCV1_ID].doWait = false; tasks[RCV2_ID].doWait = false;
-        :: tasks[RCV1_ID].doWait = true;  tasks[RCV2_ID].doWait = true; tasks[RCV1_ID].rcvInterval = 10; tasks[RCV2_ID].rcvInterval = 10;
+        :: msgstate[RCV1_ID].doWait = false; msgstate[RCV2_ID].doWait = false;
+        :: msgstate[RCV1_ID].doWait = true;  msgstate[RCV2_ID].doWait = true; msgstate[RCV1_ID].rcvInterval = 10; msgstate[RCV2_ID].rcvInterval = 10;
         fi
-        printf("@@@ %d LOG sub-scenario RcvSnd wait:%d interval:%d\n", _pid, tasks[RCV1_ID].doWait, tasks[RCV1_ID].rcvInterval)
+        printf("@@@ %d LOG sub-scenario RcvSnd wait:%d interval:%d\n", _pid, msgstate[RCV1_ID].doWait, msgstate[RCV1_ID].rcvInterval)
         */
 
   fi
@@ -530,7 +501,7 @@ proctype Sender (byte taskid) {
   printf("@@@ %d TASK Runner\n",_pid,taskid);
   
   if 
-  ::  (tasks[taskid].doCreate && !queueCreated) ->
+  ::  (msgstate[taskid].doCreate && !queueCreated) ->
       printf("@@@ %d CALL message_queue_construct %d %d %d %d %d qrc\n", _pid, 
               taskid, 
               QUEUE_NAME,
@@ -547,25 +518,25 @@ proctype Sender (byte taskid) {
   fi
   
   if
-  :: tasks[taskid].doSend -> 
+  :: msgstate[taskid].doSend -> 
       TestSyncObtain(sendSema);
       repeat:
       atomic{
       printf("@@@ %d CALL message_queue_send %d %d %d %d sendrc\n",
               _pid,
               taskid, 
-              tasks[taskid].targetQueue, 
-              tasks[taskid].sndMsg, 
-              tasks[taskid].msgSize);
+              msgstate[taskid].targetQueue, 
+              msgstate[taskid].sndMsg, 
+              msgstate[taskid].msgSize);
       message_queue_send(taskid,
-                          tasks[taskid].targetQueue,
-                          tasks[taskid].sndMsg,
-                          tasks[taskid].msgSize,
+                          msgstate[taskid].targetQueue,
+                          msgstate[taskid].sndMsg,
+                          msgstate[taskid].msgSize,
                           sendrc);
       printf("@@@ %d SCALAR sendrc %d\n",_pid,sendrc);
-      tasks[taskid].numSends-- ;
+      msgstate[taskid].numSends-- ;
       if
-      :: tasks[taskid].numSends != 0 -> tasks[SEND_ID].sndMsg++; goto repeat; 
+      :: msgstate[taskid].numSends != 0 -> msgstate[SEND_ID].sndMsg++; goto repeat; 
       :: scenario == RcvSnd -> skip;
       :: else -> TestSyncRelease(rcvSema1);
       fi
@@ -600,35 +571,35 @@ proctype Receiver1 (byte taskid) {
   TestSyncObtain(rcvSema1);
 
   if
-  :: tasks[taskid].doReceive && scenario != RcvSnd->
+  :: msgstate[taskid].doReceive && scenario != RcvSnd->
       atomic{
       printf("@@@ %d CALL message_queue_receive %d %d %d %d recrc\n",
               _pid,taskid,
-              tasks[taskid].targetQueue,
-              tasks[taskid].doWait,
-              tasks[taskid].rcvInterval);
+              msgstate[taskid].targetQueue,
+              msgstate[taskid].doWait,
+              msgstate[taskid].rcvInterval);
       message_queue_receive(taskid,
-                              tasks[taskid].targetQueue,
-                              tasks[taskid].rcvMsg,
+                              msgstate[taskid].targetQueue,
+                              msgstate[taskid].rcvMsg,
                               recrc);
-      printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
+      printf("@@@ %d LOG received %d\n", _pid,msgstate[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       TestSyncRelease(rcvSema2);
       }   
-  :: tasks[taskid].doReceive && scenario == RcvSnd->
+  :: msgstate[taskid].doReceive && scenario == RcvSnd->
       atomic{
       TestSyncRelease(sendSema);
       printf("@@@ %d CALL message_queue_receive %d %d %d %d recrc\n",
                 _pid,
                 taskid,
-                tasks[taskid].targetQueue,
-                tasks[taskid].doWait,
-                tasks[taskid].rcvInterval);
+                msgstate[taskid].targetQueue,
+                msgstate[taskid].doWait,
+                msgstate[taskid].rcvInterval);
       message_queue_receive(taskid,
-                              tasks[taskid].targetQueue,
-                              tasks[taskid].rcvMsg,
+                              msgstate[taskid].targetQueue,
+                              msgstate[taskid].rcvMsg,
                               recrc);
-      printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
+      printf("@@@ %d LOG received %d\n", _pid,msgstate[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       }
   :: else -> TestSyncRelease(rcvSema2); 
@@ -658,29 +629,29 @@ proctype Receiver2 (byte taskid) {
   
   
   if
-  :: tasks[taskid].doReceive && scenario != RcvSnd-> 
+  :: msgstate[taskid].doReceive && scenario != RcvSnd-> 
       atomic{
       printf("@@@ %d CALL message_queue_receive %d %d %d %d recrc\n",
               _pid,
               taskid,
-              tasks[taskid].targetQueue,
-              tasks[taskid].doWait,
-              tasks[taskid].rcvInterval);
-      message_queue_receive(taskid,tasks[taskid].targetQueue,tasks[taskid].rcvMsg,recrc);
-      printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
+              msgstate[taskid].targetQueue,
+              msgstate[taskid].doWait,
+              msgstate[taskid].rcvInterval);
+      message_queue_receive(taskid,msgstate[taskid].targetQueue,msgstate[taskid].rcvMsg,recrc);
+      printf("@@@ %d LOG received %d\n", _pid,msgstate[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       TestSyncRelease(sendSema);
       }
-  :: tasks[taskid].doReceive && scenario == RcvSnd->
+  :: msgstate[taskid].doReceive && scenario == RcvSnd->
       atomic{
       printf("@@@ %d CALL message_queue_receive %d %d %d %d recrc\n",
               _pid,
-              taskid,tasks[taskid].targetQueue,
-              tasks[taskid].doWait,
-              tasks[taskid].rcvInterval);
+              taskid,msgstate[taskid].targetQueue,
+              msgstate[taskid].doWait,
+              msgstate[taskid].rcvInterval);
       TestSyncRelease(sendSema);
-      message_queue_receive(taskid,tasks[taskid].targetQueue,tasks[taskid].rcvMsg,recrc);
-      printf("@@@ %d LOG received %d\n", _pid,tasks[taskid].rcvMsg);
+      message_queue_receive(taskid,msgstate[taskid].targetQueue,msgstate[taskid].rcvMsg,recrc);
+      printf("@@@ %d LOG received %d\n", _pid,msgstate[taskid].rcvMsg);
       printf("@@@ %d SCALAR recrc %d\n",_pid,recrc);
       }
   :: else -> TestSyncRelease(sendSema);
@@ -694,109 +665,6 @@ proctype Receiver2 (byte taskid) {
   printf("@@@ %d STATE %d Zombie\n",_pid,taskid)
   }
 }
-
-
-/*
- * We need a process that periodically wakes up blocked processes.
- * This is modelling background behaviour of the system,
- * such as ISRs and scheduling.
- * We visit all tasks in round-robin order (to prevent starvation)
- * and make them ready if waiting on "other" things.
- * Tasks waiting for events or timeouts are not touched
- * This terminates when all tasks are zombies.
- */
-
-bool stopclock = false;
-
-proctype System () {
-  byte taskid ;
-  bool liveSeen;
-
-  printf("@@@ %d LOG System running...\n",_pid);
-
-  loop:
-  taskid = 1;
-  liveSeen = false;
-
-  printf("@@@ %d LOG Loop through tasks...\n",_pid);
-  atomic {
-    printf("@@@ %d LOG Scenario is ",_pid);
-    printm(scenario); nl();
-  }
-  do   // while taskid < TASK_MAX ....
-  ::  taskid == TASK_MAX -> break;
-  ::  else ->
-      atomic {
-        printf("@@@ %d LOG Task %d state is ",_pid,taskid);
-        printm(tasks[taskid].state); nl()
-      }
-      if
-      :: tasks[taskid].state == Zombie -> taskid++
-      :: else ->
-         if
-         ::  tasks[taskid].state == OtherWait
-             -> tasks[taskid].state = Ready
-                printf("@@@ %d STATE %d Ready\n",_pid,taskid)
-         ::  else -> skip
-         fi
-         liveSeen = true;
-         taskid++
-      fi
-  od
-
-  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
-
-  if
-  ::  liveSeen -> goto loop
-  ::  else
-  fi
-  printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
-  stopclock = true;
-}
-
-
-/*
- * We need a process that handles a clock tick,
- * by decrementing the tick count for tasks waiting on a timeout.
- * Such a task whose ticks become zero is then made Ready,
- * and its timer status is flagged as a timeout
- * This terminates when all tasks are zombies
- * (as signalled by System via `stopclock`).
- */
-proctype Clock () {
-  int tid, tix;
-  printf("@@@ %d LOG Clock Started\n",_pid)
-  do
-  ::  stopclock  -> goto stopped
-  ::  !stopclock ->
-      printf(" (tick) \n");
-      tid = 1;
-      do
-      ::  tid == TASK_MAX -> break
-      ::  else ->
-          atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
-          if
-          ::  tasks[tid].state == TimeWait ->
-              tix = tasks[tid].ticks - 1;
-              // printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
-              if
-              ::  tix == 0
-                  tasks[tid].tout = true
-                  tasks[tid].state = Ready
-                  printf("@@@ %d STATE %d Ready\n",_pid,tid)
-              ::  else
-                  tasks[tid].ticks = tix
-              fi
-          ::  else // state != TimeWait
-          fi
-          tid = tid + 1
-      od
-  od
-stopped:
-  printf("@@@ %d LOG Clock Stopped\n",_pid);
-}
-
-
 
 init {
   pid nr;

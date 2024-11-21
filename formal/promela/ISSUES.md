@@ -3,7 +3,7 @@
 ## CURRENT WORK
 
 Moving common parts in all models to `common/(rtems/model).pml` as appropriate.
-
+DONE
 
 ## PUZZLING
 
@@ -23,16 +23,6 @@ Moving common parts in all models to `common/(rtems/model).pml` as appropriate.
 Maybe the issue is that when timeout occurs we first check to see if a message
 has (JUST!) arrived, in which case we are satisfied, otherwise we complain.
  
-### TO DO
-
-* redo the sema_set_priority model - it is failing with error returns
-* move the following declarations to `tx-model-0`:
-  -  return values
-  -  task states
-
-NOTE: `GetPending` is only used here in the events manager.
-There is a `GetPendingEvents` in SH's `tr-event-send-receive.c`.
-
 
 ### Current command behaviour:
  
@@ -51,7 +41,6 @@ File `tr-<modelname>-model.h` currently defines test helpers
 (like `mergeopts`,`ObtainSema`).
 It also has a fixed list declaring the `RtemsModel<Mgr>_RunN` functions.
 This part should be auto-generated, in the way that `tc-<model>.c` is.
-
 
 ### Using tx-support.h
 

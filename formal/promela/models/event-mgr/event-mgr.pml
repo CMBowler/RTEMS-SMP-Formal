@@ -91,22 +91,13 @@ inline outputDefines () {
 mtype{ EventWait } ; // need to know when Blocked by an event receive
 
 // Tasks
-typedef Task {
-  byte nodeid; // So we can spot remote calls
-  byte pmlid; // Promela process id
-  mtype state ; // {Ready,EventWait,TimeWait,OtherWait}
-  bool preemptable ;
-  byte prio ; // lower number is higher priority
-  int ticks; //
-  bool tout; // true if woken by a timeout
-  // Event Model related
+typedef EventState {
   unsigned wanted  : NO_OF_EVENTS ; // EvtSet, those expected by receiver
   unsigned pending : NO_OF_EVENTS ; // EvtSet, those already received
   bool all; // Do we want All?
 };
 
-
-Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
+EventState evtstate[TASK_MAX]; // evtstate[0] models a NULL dereference
 
 byte sendrc;            // Sender global variable
 byte recrc;             // Receiver global variable
@@ -146,38 +137,21 @@ inline setminus(diff,minuend,subtrahend) {
 */
 
 
-/*
- * waitUntilReady(id) logs that task[id] is waiting,
- * and then attempts to execute a statement that blocks,
- * until some other process changes task[id]'s state to Ready.
- * It relies on the fact that if a statement blocks inside an atomic block,
- * the block loses its atomic behaviour and yields to other Promela processes
- *
- * It is used to model a task that has been suspended for any reason.
- */
-inline waitUntilReady(id){
-  atomic{
-    printf("@@@ %d LOG Task %d waiting, state = ",_pid,id);
-    printm(tasks[id].state); nl()
-  }
-  tasks[id].state == Ready; // breaks out of atomics if false
-  printf("@@@ %d STATE %d Ready\n",_pid,id)
-}
 
 /*
- * satisfied(task,out,sat) checks if a recieve has been satisfied.
+ * satisfied(estate,out,sat) checks if a recieve has been satisfied.
  * It updates its `sat` argument to reflect the check outcome,
  * and logs relevant details.
  */
-inline satisfied(task,out,sat) {
-  out = task.pending & task.wanted;
+inline satisfied(estate,out,sat) {
+  out = estate.pending & estate.wanted;
   if
-  ::  task.all && out == task.wanted  ->  sat = true
-  ::  !task.all && out != EVTS_NONE   ->  sat = true
+  ::  estate.all && out == estate.wanted  ->  sat = true
+  ::  !estate.all && out != EVTS_NONE   ->  sat = true
   ::  else                            ->  sat = false
   fi
   printf("@@@ %d LOG satisfied(<pnd:%d wnt:%d all:%d>,out:%d,SAT:%d)\n",
-          _pid,task.pending,task.wanted,task.all,out,sat)
+          _pid,estate.pending,estate.wanted,estate.all,out,sat)
 }
 
 /*
@@ -225,11 +199,11 @@ inline event_send(self,tid,evts,rc) {
     if
     ::  tid >= BAD_ID -> rc = RC_InvId
     ::  tid < BAD_ID ->
-        tasks[tid].pending = tasks[tid].pending | evts
+        evtstate[tid].pending = evtstate[tid].pending | evts
         // at this point, have we woken the target task?
         unsigned got : NO_OF_EVENTS;
         bool sat;
-        satisfied(tasks[tid],got,sat);
+        satisfied(evtstate[tid],got,sat);
         if
         ::  sat ->
             tasks[tid].state = Ready;
@@ -278,26 +252,26 @@ inline event_send(self,tid,evts,rc) {
 inline event_receive(self,evts,wait,wantall,interval,out,rc){
   atomic{
     printf("@@@ %d LOG pending[%d] = ",_pid,self);
-    printevents(tasks[self].pending); nl();
-    tasks[self].wanted = evts;
-    tasks[self].all = wantall
+    printevents(evtstate[self].pending); nl();
+    evtstate[self].wanted = evts;
+    evtstate[self].all = wantall
     if
     ::  out == 0 ->
         printf("@@@ %d LOG Receive NULL out.\n",_pid);
         rc = RC_InvAddr ;
     ::  evts == EVTS_PENDING ->
         printf("@@@ %d LOG Receive Pending.\n",_pid);
-        recout[out] = tasks[self].pending;
+        recout[out] = evtstate[self].pending;
         rc = RC_OK
     ::  else ->
         bool sat;
-        retry:  satisfied(tasks[self],recout[out],sat);
+        retry:  satisfied(evtstate[self],recout[out],sat);
         if
         ::  sat ->
             printf("@@@ %d LOG Receive Satisfied!\n",_pid);
-            setminus(tasks[self].pending,tasks[self].pending,recout[out]);
+            setminus(evtstate[self].pending,evtstate[self].pending,recout[out]);
             printf("@@@ %d LOG pending'[%d] = ",_pid,self);
-            printevents(tasks[self].pending); nl();
+            printevents(evtstate[self].pending); nl();
             rc = RC_OK;
         ::  !sat && !wait ->
             printf("@@@ %d LOG Receive Not Satisfied (no wait)\n",_pid);
@@ -326,7 +300,7 @@ inline event_receive(self,evts,wait,wantall,interval,out,rc){
         fi
     fi
     printf("@@@ %d LOG pending'[%d] = ",_pid,self);
-    printevents(tasks[self].pending); nl();
+    printevents(evtstate[self].pending); nl();
   }
 }
 
@@ -438,7 +412,7 @@ int rcvCore;
  * can be covered in Send; Receive.
  */
 mtype = {Send,Receive,SndRcv,RcvSnd,SndRcvSnd,SndPre, MultiCore};
-mtype scenario;
+
 
 inline chooseScenario() {
 
@@ -639,7 +613,7 @@ proctype Receiver (byte nid, taskid) {
 
   if
   :: doReceive ->
-    printf("@@@ %d SCALAR pending %d %d\n",_pid,taskid,tasks[taskid].pending);
+    printf("@@@ %d SCALAR pending %d %d\n",_pid,taskid,evtstate[taskid].pending);
 
     if
     :: sendTwice && !sentFirst -> TestSyncRelease(sendSema)
@@ -658,7 +632,7 @@ proctype Receiver (byte nid, taskid) {
       printf("@@@ %d SCALAR recout %d %d\n",_pid,rcvOut,recout[rcvOut]);
     :: else
     fi
-    printf("@@@ %d SCALAR pending %d %d\n",_pid,taskid,tasks[taskid].pending);
+    printf("@@@ %d SCALAR pending %d %d\n",_pid,taskid,evtstate[taskid].pending);
   :: else
   fi
 
@@ -675,106 +649,6 @@ proctype Receiver (byte nid, taskid) {
   tasks[taskid].state = Zombie;
   printf("@@@ %d STATE %d Zombie\n",_pid,taskid)
 }
-
-bool stopclock = false;
-
-/*
- * We need a process that periodically wakes up blocked processes.
- * This is modelling background behaviour of the system,
- * such as ISRs and scheduling.
- * We visit all tasks in round-robin order (to prevent starvation)
- * and make them ready if waiting on "other" things.
- * Tasks waiting for events or timeouts are not touched
- * This terminates when all tasks are zombies.
- */
-proctype System () {
-  byte taskid ;
-  bool liveSeen;
-
-  printf("@@@ %d LOG System running...\n",_pid);
-
-  loop:
-  taskid = 1;
-  liveSeen = false;
-
-  printf("@@@ %d LOG Loop through tasks...\n",_pid);
-  atomic {
-    printf("@@@ %d LOG Scenario is ",_pid);
-    printm(scenario); nl();
-  }
-  do   // while taskid < TASK_MAX ....
-  ::  taskid == TASK_MAX -> break;
-  ::  else ->
-      atomic {
-        printf("@@@ %d LOG Task %d state is ",_pid,taskid);
-        printm(tasks[taskid].state); nl()
-      }
-      if
-      :: tasks[taskid].state == Zombie -> taskid++
-      :: else ->
-         if
-         ::  tasks[taskid].state == OtherWait
-             -> tasks[taskid].state = Ready
-                printf("@@@ %d STATE %d Ready\n",_pid,taskid)
-         ::  else -> skip
-         fi
-         liveSeen = true;
-         taskid++
-      fi
-  od
-
-  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
-
-  if
-  ::  liveSeen -> goto loop
-  ::  else
-  fi
-  printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
-  stopclock = true;
-}
-
-
-/*
- * We need a process that handles a clock tick,
- * by decrementing the tick count for tasks waiting on a timeout.
- * Such a task whose ticks become zero is then made Ready,
- * and its timer status is flagged as a timeout
- * This terminates when all tasks are zombies
- * (as signalled by System via `stopclock`).
- */
-proctype Clock () {
-  int tid, tix;
-  printf("@@@ %d LOG Clock Started\n",_pid)
-  do
-  ::  stopclock  -> goto stopped
-  ::  !stopclock ->
-      printf(" (tick) \n");
-      tid = 1;
-      do
-      ::  tid == TASK_MAX -> break
-      ::  else ->
-          atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
-          if
-          ::  tasks[tid].state == TimeWait ->
-              tix = tasks[tid].ticks - 1;
-              // printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
-              if
-              ::  tix == 0
-                  tasks[tid].tout = true
-                  tasks[tid].state = Ready
-                  printf("@@@ %d STATE %d Ready\n",_pid,tid)
-              ::  else
-                  tasks[tid].ticks = tix
-              fi
-          ::  else // state != TimeWait
-          fi
-          tid = tid + 1
-      od
-  od
-stopped:
-  printf("@@@ %d LOG Clock Stopped\n",_pid);
-}
-
 
 init {
   pid nr;
