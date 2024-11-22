@@ -22,12 +22,14 @@
 typedef Task {
   byte nodeid; // So we can spot remote calls
   byte pmlid; // Promela process id
-  mtype state ; // {Zombie,Dormant,Ready,TimeWait,OtherWait,...}
+  mtype state = Zombie; // {Zombie,Dormant,Ready,TimeWait,OtherWait,...}
+  byte start;
   bool preemptable;
   byte prio; // lower number is higher priority
   int ticks; // clock ticks to keep track of timeout
   bool tout; // true if woken by a timeout
   bool isr;     // If task is woken from Interrupt context
+  bool mutexs[SEMA_MAX]; // List of Semaphores the task is currently holding.
 };
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
 #define BAD_ID TASK_MAX   // this ID and higher are considered invalid
@@ -204,5 +206,4 @@ inline TestSyncReleased(sem_id)
 {
   test_sync_sema[sem_id] = true ;
 }
-
 
