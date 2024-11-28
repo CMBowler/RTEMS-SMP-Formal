@@ -120,10 +120,10 @@ inline task_delete(task, tid, rc) {
 //*/
 
 
-inline task_setPrio(task, new, old, rc) {
+inline task_setPrio(tid, new, old, rc) {
     atomic {
         if
-        ::  task.state == Zombie ->
+        ::  tasks[tid].state == Zombie ->
                 rc = RC_InvId;
         ::  old == INVALID_ID ->
                 rc = RC_InvAddr;
@@ -132,21 +132,49 @@ inline task_setPrio(task, new, old, rc) {
                 ::  new > MAX_PRIO ->
                         rc = RC_InvPrio;
                 ::  new == CURRENT_PRIO ->
-                        old = task.prio;
+                        old = tasks[tid].prio;
                         rc = RC_OK;
                 ::  else ->
-                        old = task.prio;
+                        old = tasks[tid].prio;
                         if
-                        ::  new <= old -> skip
+                        ::  new > old -> 
+                                tasks[tid].prio = new;
+                                set_priority(tasks[tid].pmlid, new); //TODO
                         ::  else ->
-                        // If the task is currently holding any binary semaphores 
-                        // which use a locking protocol, then the task’s priority cannot be lowered immediately
-                                
+                                /*
+                                If the task is currently holding any 
+                                binary semaphores which use a locking protocol, 
+                                then the task’s priority cannot be lowered immediately
+                                */
+                                interrupt_channel ! tid, new;
                         fi
-                        task.prio = new;
-                        set_priority(task.pmlid, new); //TODO
                         rc = RC_OK;
                 fi
         fi
     }
 }
+/*
+inline task_setPrio(task, sched, prio, rc) {
+    if
+    ::  prio == 0 ->
+            rc = RC_InvAddr
+    ::  else ->
+            if
+            ::  task.state == Zombie ->
+                    rc = RC_InvId
+            ::  else ->
+                    if
+                    ::  sched.state == Zombie ->
+                            rc = RC_InvId
+                    ::  else ->
+
+}
+
+inline rtems_task_wake_after(ticks) {
+
+    // ticks == 0: RTEMS_YIELD_PROCESSOR
+    int count = 0;
+    do
+    ::  
+}
+*/

@@ -29,6 +29,7 @@ typedef Task {
   int ticks; // clock ticks to keep track of timeout
   bool tout; // true if woken by a timeout
   bool isr;     // If task is woken from Interrupt context
+  bool HoldingMutex;
   bool mutexs[SEMA_MAX]; // List of Semaphores the task is currently holding.
 };
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference

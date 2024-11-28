@@ -121,6 +121,8 @@ typedef struct {
     rtems_id worker0_wakeup; // ID of the semaphore used to wake up the worker task
     rtems_id worker1_wakeup; // ID of the semaphore used to wake up the worker task
     rtems_id runner_wakeup; // ID of the semaphore used to wake up the runner task
+    rtems_id worker0_flag; // ID of the semaphore used to wake up the worker task
+    rtems_id worker1_flag; // ID of the semaphore used to wake up the worker task
     rtems_id lock_0; // ID of the semaphore used to wake up lock 0
     rtems_id runner_sched; // scheduler ID of scheduler used by the runner task
     rtems_id other_sched; // scheduler ID of another scheduler
@@ -139,6 +141,8 @@ typedef RtemsModelTaskMgr_Context Context;
 
 rtems_id CreateWakeupSema( void );
 
+rtems_id CreateTestSyncMutex( char * name );
+
 void DeleteWakeupSema( rtems_id id );
 
 void Wait( rtems_id id );
@@ -154,6 +158,8 @@ rtems_id mapid( Context *ctx, int pid ) ;
 rtems_name mapName(int task) ;
 
 void init_tid(rtems_id* id, int max) ;
+
+rtems_task_priority priority_inversion(rtems_task_priority prio) ;
 
 void checkTaskIs( rtems_id expected_id ) ;
 

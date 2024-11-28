@@ -68,6 +68,8 @@ INIT: |
   initialise_semaphore( 1, ctx->worker0_wakeup, semaphore );
   initialise_semaphore( 2, ctx->worker1_wakeup, semaphore );
   initialise_semaphore( 3, ctx->lock_0, semaphore );
+  initialise_semaphore( 4, ctx->worker0_flag, semaphore );
+  initialise_semaphore( 5, ctx->worker1_flag, semaphore );
 
 TASK_INIT: |
   T_log( T_NORMAL, "Starting Task %d", {0});
@@ -116,7 +118,7 @@ task_resume: |
 
 task_setPriority: |
   T_log( T_NORMAL, "Setting Task Priority(%d)", {0}, {1}, {2}, {3} );
-  {3} = ( *ctx->t_setPriority )( {0} ? taskID[{0}] : 0xffffffff, {1} ? {1} : RTEMS_CURRENT_PRIORITY, {2} ? &priority : NULL );
+  {3} = ( *ctx->t_setPriority )( {0} ? taskID[{0}] : 0xffffffff, {1} ? priority_inversion( {1} ) : RTEMS_CURRENT_PRIORITY, {2} ? &priority : NULL );
   T_log( T_NORMAL, "Returned 0x%x from Set Priority", {3} );
 
 createRC: |
@@ -139,6 +141,10 @@ resumeRC: |
 
 setPriorityRC: |
   T_rsc( setPriorityRC, {0} );
+
+oldPrio: |
+  T_log( T_NORMAL, "Returned Priority: %d from Set Priority", priority );
+  T_rsc( priority, priority_inversion( {0} ))
 
 WaitForSuspend: |
   T_log( T_NORMAL, "Waiting for Task(%d) to Suspend", {0}, {1} );

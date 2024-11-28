@@ -44,7 +44,8 @@
 
 #include "../common/rtems.pml"
 #define TASK_MAX 5 
-#define SEMA_MAX 4
+#define SEMA_MAX 6
+#define SCHED_MAX 4
 #include "../common/model.pml"
 
 #include "task-mgr-h.pml"
@@ -65,7 +66,7 @@ byte task_id[TASK_MAX];
 
 // Task Create
 bool task_0_name;
-byte insertId
+byte tsk0_id;
 byte createPrio;
 bool createValId;
 
@@ -101,6 +102,7 @@ byte tsk1_ID;
 byte task_1_Entry;
 
 bool testPrio;
+bool raiseWithMutex;
 
 
 mtype = {CreateDestroy, TaskStart, SuspResume, ChangePrio}
@@ -142,6 +144,7 @@ inline chooseScenario() {
     task_1_Entry = SEMA_TASK_START_1;
 
     testPrio = false;
+    raiseWithMutex = false;
 
     tasks[RUNNER_ID].state = Ready;
 
@@ -191,7 +194,11 @@ inline chooseScenario() {
             fi
     ::  scenario == ChangePrio ->
             testPrio = true;
-            //suspendSelf = true;
+            if
+            ::  suspendSelf = true;
+            ::  raiseWithMutex = true;
+            ::  skip;
+            fi
     fi
 }
 
@@ -220,6 +227,15 @@ suspRepeat:
     task_resume(tasks[resumeId], resumeRC);
     printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
 
+}
+
+inline changePriority (taskid, prio, oldPrio, rc) {
+    // Check Priority
+            printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                                    _pid, taskid, prio, old_prio, rc);
+            task_setPrio(taskid, prio, old_prio, rc);
+            printf("@@@ %d CALL oldPrio %d\n",_pid, old_prio);
+            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
 }
 
 proctype Runner(byte nid, taskid) {
@@ -255,21 +271,21 @@ proctype Runner(byte nid, taskid) {
     ::  createTask == true ->
 		if
 		::	createValId == true ->
-				setTask(insertId, setRC);
+				setTask(tsk0_id, setRC);
 				if 
 				::	setRC == false ->
 						printf("@@@ %d CALL TooMany\n", _pid);
 				:: 	else
 				fi
 		::	else ->
-				insertId = 0;
+				tsk0_id = 0;
 				setRC = true;
 		fi
 
 		printf("@@@ %d CALL task_create %d %d %d %d %d createRC\n", 
-				_pid, name, prio, mode, attr, insertId);
+				_pid, name, prio, mode, attr, tsk0_id);
 
-        task_create(tasks[insertId], insertId, name, prio, preempt, setRC, createRC);
+        task_create(tasks[tsk0_id], tsk0_id, name, prio, preempt, setRC, createRC);
 		
 		printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
     ::  else
@@ -280,7 +296,7 @@ proctype Runner(byte nid, taskid) {
     ::  startTask == true ->
             if
             ::	startValId == true ->
-                    startId = insertId;
+                    startId = tsk0_id;
             :: 	startValId == false ->
                     startId = INVALID_ID;
             fi
@@ -298,7 +314,7 @@ repeat_start:
             printf("@@@ %d CALL startRC %d\n", _pid, startRC);
             if
             ::	startRC != RC_OK ->
-                    TestSyncRelease(SEMA_CREATEDELETE);
+                    TestSyncRelease(SEMA_TASK0_FIN);
             :: 	doubleStart == true ->
                     if 
                     ::	doubleDone == false ->
@@ -332,36 +348,41 @@ repeat_start:
             //Resume
             // Wait for Task 0 to self Suspend
             printf("@@@ %d CALL WaitForSuspend %d resumeRC\n", 
-                        _pid, insertId, resumeRC);
+                        _pid, tsk0_id, resumeRC);
             do
             ::  isSuspendRC == RC_AlrSuspd -> break;
             ::  else -> 
-                    task_isSuspend(tasks[insertId], isSuspendRC);
+                    task_isSuspend(tasks[tsk0_id], isSuspendRC);
             od
 
             printf("@@@ %d CALL task_resume %d resumeRC\n", 
-                        _pid, insertId, resumeRC);
-            task_resume(tasks[insertId], resumeRC);
+                        _pid, tsk0_id, resumeRC);
+            task_resume(tasks[tsk0_id], resumeRC);
             printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
     ::  else
     fi
 
     if 
     ::	startTask == true ->
-            TestSyncObtain(SEMA_CREATEDELETE);
+            TestSyncObtain(SEMA_TASK0_FIN);
     ::	else
     fi
+    if
+    ::  testPrio == true ->
+            TestSyncObtain(SEMA_TASK1_FIN);
+    ::	else
+    fi   
 
     if
     ::  suspendTask == true ->
             if
             ::  suspValId == true ->
-                    suspendId = insertId;
+                    suspendId = tsk0_id;
             ::  else // Set to 0
             fi
             if
             ::  resumeValId == true ->
-                    resumeId = insertId;
+                    resumeId = tsk0_id;
             ::  else // Set to 0
             fi
             SuspendResume(suspendId, resumeId);
@@ -370,7 +391,20 @@ repeat_start:
 
     if
     ::  createTask == true ->
-            deleteId = insertId;
+            deleteId = tsk0_id;
+    ::  else
+    fi
+
+    if
+    ::  testPrio == true ->
+            // Check Priority of Two tasks before deletion:
+            byte setPriorityRC;
+            byte old_prio = 1;
+            printf("@@@ %d DECL byte priority 0\n",_pid);
+            // TSK0
+            changePriority(tsk0_id, CURRENT_PRIO, old_prio, setPriorityRC);
+            // TSK1
+            changePriority(tsk1_ID, CURRENT_PRIO, old_prio, setPriorityRC);
     ::  else
     fi
 
@@ -395,7 +429,10 @@ repeat_start:
     fi
 
 
-    // Once done, free runner task model id:
+    // Once done, free runner task model id
+    // and kill Interupts:
+    interrupt_channel ! INVALID_ID, 0;
+
     bool runRC;
     removeTask(taskid, runRC);
     if
@@ -408,8 +445,9 @@ repeat_start:
 
 // global task variables
 
-proctype Task0(byte taskid) priority MED_PRIO {
-    assert(_priority == MED_PRIO)
+proctype Task0(byte taskId) priority MED_PRIO {
+    assert(_priority == MED_PRIO);
+    assert(taskId < TASK_MAX);
     /*
     if
     :: multicore ->
@@ -424,26 +462,18 @@ proctype Task0(byte taskid) priority MED_PRIO {
             TestSyncObtain(SEMA_TASK_START_0);
             TestSyncRelease(SEMA_TASK_START_0);
 
-            tasks[taskid].pmlid = _pid;
+            tasks[taskId].pmlid = _pid;
             //set_priority(_pid, tasks[taskid].prio)
 
             //Do Stuff
-
-            // Priority Changing 
-            if 
-            ::  testPrio == true ->
-                    // Obtain Mutex:
-                    ObtainMutex(taskid, SEMA_LOCK);
-            ::  else
-            fi
 
             // Self Suspend:
             if
             ::  suspendSelf == true ->
                     // Suspend
                     printf("@@@ %d CALL task_suspend %d suspendRC\n", 
-                                    _pid, insertId, suspendRC);
-                    task_suspend(tasks[insertId], suspendRC);
+                                    _pid, tsk0_id, suspendRC);
+                    task_suspend(tasks[tsk0_id], suspendRC);
                     printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
             ::  else 
             fi
@@ -452,40 +482,46 @@ proctype Task0(byte taskid) priority MED_PRIO {
             ::  testPrio == true ->
                     byte setPriorityRC;
                     byte old_prio = 1;
+                    //byte valid_prio = 1;
                     
                     printf("@@@ %d DECL byte priority 0\n",_pid);
 
+                    // Priority Changing 
+                    if 
+                    ::  raiseWithMutex == true ->
+                            // Obtain Mutex:
+                            ObtainMutex(taskId, SEMA_LOCK);
+                    ::  else
+                    fi
 
                     // Check Priority
-                    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
-                                            _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
-                    task_setPrio(tasks[taskid], CURRENT_PRIO, old_prio, setPriorityRC);
-                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+                    changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
 
                     // Chage Priority to High
-                    printf("@@@ %d CALL task_setPriority %d LOW_PRIO %d setPriorityRC\n", 
-                                            _pid, taskid, LOW_PRIO, old_prio, setPriorityRC);
-                    task_setPrio(tasks[taskid], LOW_PRIO, old_prio, setPriorityRC);
-                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+                    changePriority(taskId, LOW_PRIO, old_prio, setPriorityRC);
 
                     // Check Priority
-                    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
-                                            _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
-                    task_setPrio(tasks[taskid], CURRENT_PRIO, old_prio, setPriorityRC);
-                    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+                    changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
             
-                    // Release Mutex:
-                    ReleaseMutex(taskid, SEMA_LOCK);         
+                    if 
+                    ::  raiseWithMutex == true ->
+                            // Release Mutex:
+                            ReleaseMutex(taskId, SEMA_LOCK);
+                            // Check Priority
+                            changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
+                    ::  else
+                    fi       
             ::  else -> skip
             fi
             // Release Semaphores
-            TestSyncRelease(SEMA_CREATEDELETE);
+            TestSyncRelease(SEMA_TASK0_FIN);
     ::  else -> skip
     fi
 }
 
-proctype Task1(byte taskid) {
-    assert(_priority == MED_PRIO)
+proctype Task1(byte taskId) {
+    assert(_priority == MED_PRIO);
+    assert(taskId < TASK_MAX);
     if
     ::  testPrio == true ->
             byte setPriorityRC;
@@ -494,38 +530,55 @@ proctype Task1(byte taskid) {
             TestSyncObtain(SEMA_TASK_START_1);
             TestSyncRelease(SEMA_TASK_START_1);
 
-            tasks[taskid].pmlid = _pid;
+            tasks[taskId].pmlid = _pid;
             //set_priority(_pid, tasks[taskid].prio)
+
+            // Obtain Mutex:
+            ObtainMutex(taskId, SEMA_LOCK);
             
             printf("@@@ %d DECL byte priority 0\n",_pid);
 
-
             // Check Priority
-            printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
-                                    _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
-            task_setPrio(tasks[taskid], CURRENT_PRIO, old_prio, setPriorityRC);
-            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+            changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
 
             // Chage Priority to High
-            printf("@@@ %d CALL task_setPriority %d HIGH_PRIO %d setPriorityRC\n", 
-                                    _pid, taskid, HIGH_PRIO, old_prio, setPriorityRC);
-            task_setPrio(tasks[taskid], HIGH_PRIO, old_prio, setPriorityRC);
-            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
+            changePriority(taskId, HIGH_PRIO, old_prio, setPriorityRC);
 
             // Check Priority
-            printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
-                                    _pid, taskid, CURRENT_PRIO, old_prio, setPriorityRC);
-            task_setPrio(tasks[taskid], CURRENT_PRIO, old_prio, setPriorityRC);
-            printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,setPriorityRC);
-
-            // Obtain Mutex:
-            ObtainMutex(taskid, SEMA_LOCK);
+            changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
 
             // Release Mutex:
-            ReleaseMutex(taskid, SEMA_LOCK);
+            ReleaseMutex(taskId, SEMA_LOCK);
+
+            TestSyncRelease(SEMA_TASK1_FIN);
         
     ::  else
     fi
+}
+
+/*
+proctype Task2 (byte taskid) {
+
+}
+*/
+
+proctype PrioInheritance () {
+    //printf("@@@ %d prio Inheritance Start \n",_pid);
+    assert(_priority == ISR_PRIO);
+    byte taskId, prio;
+    do
+    ::  interrupt_channel ? taskId, prio ->
+            assert(taskId < TASK_MAX);
+            if
+            ::  taskId == 0 -> break;
+            ::  else;
+            fi
+            tasks[taskId].HoldingMutex == false -> atomic {
+                //printf("@@@ %d prio Inheritance Enabled \n",_pid);
+                tasks[taskId].prio = prio;
+                set_priority(tasks[taskId].pmlid, prio)
+            }
+    od
 }
 
 init priority MED_PRIO{
@@ -558,6 +611,7 @@ init priority MED_PRIO{
 
 	run System();
 	run Clock();
+    run PrioInheritance() priority ISR_PRIO;
 
     TestSyncRelease(SEMA_LOCK);
 	
@@ -566,6 +620,8 @@ init priority MED_PRIO{
     run Task1(TASK1_ID) priority MED_PRIO;
 
 	_nr_pr == 1;
+    // kill interrupt channel
+    
 
 	#ifdef TESTGEN
 	assert(false);

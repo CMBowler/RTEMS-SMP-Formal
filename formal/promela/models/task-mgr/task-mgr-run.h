@@ -9,15 +9,15 @@ static void Worker{0}_0( rtems_task_argument arg )
 
 #ifdef TASK_0
     T_log( T_NORMAL, "Worker 0 Running" );
-    TestSegment4( ctx );
+    TestSegment5( ctx );
     T_log( T_NORMAL, "Worker 0 finished" );
 #endif
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  ReleaseTestSyncSema( ctx->worker0_wakeup );
-  ReleaseTestSyncSema( ctx->worker1_wakeup );
-  ReleaseTestSyncSema( ctx->runner_wakeup );
-  ReleaseTestSyncSema( ctx->lock_0 );
+  //ReleaseTestSyncSema( ctx->worker0_wakeup );
+  //ReleaseTestSyncSema( ctx->worker1_wakeup );
+  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->lock_0 );
   
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
@@ -32,16 +32,16 @@ static void Worker{0}_1( rtems_task_argument arg )
   ctx = (Context *) arg;
 #ifdef TASK_1
     T_log( T_NORMAL, "Worker 1 Running" );
-    TestSegment5( ctx );
+    TestSegment6( ctx );
     T_log( T_NORMAL, "Worker 1 finished" );
 #endif
 
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  ReleaseTestSyncSema( ctx->worker0_wakeup );
-  ReleaseTestSyncSema( ctx->worker1_wakeup );
-  ReleaseTestSyncSema( ctx->runner_wakeup );
-  ReleaseTestSyncSema( ctx->lock_0 );
+  //ReleaseTestSyncSema( ctx->worker0_wakeup );
+  //ReleaseTestSyncSema( ctx->worker1_wakeup );
+  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->lock_0 );
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
 
@@ -73,8 +73,12 @@ static void RtemsModelTaskMgr_Setup{0}(
   ctx->worker1_wakeup = CreateTestSyncSema( "WRK1" );
   T_log( T_NORMAL, "Creating Runner TestSync Semaphore" );
   ctx->runner_wakeup = CreateTestSyncSema( "RUNR" );
-  T_log( T_NORMAL, "Creating Lock 0 TestSync Semaphore" );
-  ctx->lock_0 = CreateTestSyncSema( "MTX0" );
+  T_log( T_NORMAL, "Creating Lock 0 TestSync Mutex" );
+  ctx->lock_0 = CreateTestSyncMutex( "MTX0" );
+  T_log( T_NORMAL, "Creating Worker0 Flag TestSync Semaphore" );
+  ctx->worker0_flag = CreateTestSyncSema( "WKF0" );
+  T_log( T_NORMAL, "Creating Worker1  Flag TestSync Semaphore" );
+  ctx->worker1_flag = CreateTestSyncSema( "WKF1" );
 
   // Add worker to the taskId array:
   tasks[1] = Worker{0}_0;

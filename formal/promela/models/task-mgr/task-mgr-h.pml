@@ -2,10 +2,11 @@
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
-#define SEMA_CREATEDELETE 	(0) // Model Specific Lock
 #define SEMA_TASK_START_0 	(1)
 #define SEMA_TASK_START_1  	(2)
 #define SEMA_LOCK           (3)
+#define SEMA_TASK0_FIN   	(4) // Model Specific Lock
+#define SEMA_TASK1_FIN   	(5) // Model Specific Lock
 
 /*
  * We need to output annotations for any #define we use.
@@ -19,6 +20,7 @@
 #define LOW_PRIO 1
 #define MED_PRIO 5
 #define HIGH_PRIO 10
+#define ISR_PRIO 11
 
 #define INVALID_ID 0
 #define RUNNER_ID 1
@@ -27,6 +29,8 @@
 
 #define CLEAR_TASKS 255
 byte task_control = CLEAR_TASKS;
+
+chan interrupt_channel = [1] of { byte, byte };
 
 inline outputDefines () {
 
@@ -47,19 +51,19 @@ inline outputDefines () {
 }
 
 inline outputDeclarations () {
-  printf("@@@ %d DECL byte createRC 0\n",_pid);
-  printf("@@@ %d DECL byte startRC 0\n",_pid);
-  printf("@@@ %d DECL byte deleteRC 0\n",_pid);
-  printf("@@@ %d DECL byte suspendRC 0\n",_pid);
-  printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
-  printf("@@@ %d DECL byte resumeRC 0\n",_pid);
-  printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
-  // Rather than refine an entire Task array, we refine array 'slices'
-  //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
-  //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
-  printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
-  printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);
-  printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
+    printf("@@@ %d DECL byte createRC 0\n",_pid);
+    printf("@@@ %d DECL byte startRC 0\n",_pid);
+    printf("@@@ %d DECL byte deleteRC 0\n",_pid);
+    printf("@@@ %d DECL byte suspendRC 0\n",_pid);
+    printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
+    printf("@@@ %d DECL byte resumeRC 0\n",_pid);
+    printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
+    // Rather than refine an entire Task array, we refine array 'slices'
+    //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
+    //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
+    printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
+    printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);
+    printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
 }
 
 typedef Mode {
@@ -67,20 +71,6 @@ typedef Mode {
     bool timeslice;
     bool ASR;
     int isr_lvl;
-}
-
-inline ObtainMutex(tid, sid) {
-    TestSyncObtain(sid);
-    tasks[tid].mutexs[sid] = 1;
-}
-
-inline ReleaseMutex(tid, sid) { 
-    if
-    ::  tasks[tid].mutexs[sid] == 1 ->
-            TestSyncRelease(sid);
-            //rc = true;
-    ::  else //-> rc = false
-    fi
 }
 
 inline isNameValid(name, rc) {
@@ -133,4 +123,43 @@ inline removeTask(tid, rc) {
             rc = false;
     fi
     //TestSyncRelease(SEMA_TASKCONTROL);
+}
+
+inline isHoldingMutex(tid, holding, rc) {
+    atomic {
+        holding = false;
+        if
+        ::  tid >= TASK_MAX ->
+                rc = false;
+        ::  tid == 0 ->
+                rc = false;
+        ::  else ->
+                byte mutID = 0;
+                do
+                ::  mutID < SEMA_MAX ->
+                        if
+                        ::  tasks[tid].mutexs[mutID] == 1 ->
+                                holding = true;
+                        ::  else
+                        fi
+                else -> break;
+                od
+        fi
+    }
+}
+
+inline ObtainMutex(tid, sid) {
+    TestSyncObtain(sid);
+    tasks[tid].mutexs[sid] = 1;
+    tasks[tid].HoldingMutex = true;
+}
+
+inline ReleaseMutex(tid, sid) { 
+    bool rc; // TODO 
+    if
+    ::  tasks[tid].mutexs[sid] == 1 ->
+            TestSyncRelease(sid);
+            isHoldingMutex(tid, tasks[tid].HoldingMutex, rc);
+    ::  else -> rc = false
+    fi
 }

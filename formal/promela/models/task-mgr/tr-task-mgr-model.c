@@ -95,6 +95,17 @@ void init_tid(rtems_id* id, int max) {
         id[i] = 0;
     }
 }
+
+rtems_task_priority priority_inversion(rtems_task_priority prio) {
+    // Fix later
+    int LOW_PRIO = 10;
+    int HIGH_PRIO = 1;
+    if (prio == LOW_PRIO) 
+        return HIGH_PRIO;
+    else if (prio == HIGH_PRIO)
+        return LOW_PRIO;
+    else return prio;
+}
 /*
 rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)
 {
@@ -125,14 +136,14 @@ static void RtemsModelTaskMgr_Teardown(
 )
 {
   rtems_status_code   sc;
-  //rtems_task_priority prio;
+  rtems_task_priority prio;
 
   T_log( T_NORMAL, "Runner Teardown" );
 
-  //prio = 0;
-  //sc = rtems_task_set_priority( RTEMS_SELF, M_PRIO_HIGH, &prio );
-  //T_rsc_success( sc );
-  //T_eq_u32( prio, M_PRIO_NORMAL );
+  prio = 0;
+  sc = rtems_task_set_priority( RTEMS_SELF, M_PRIO_HIGH, &prio );
+  T_rsc_success( sc );
+  //T_eq_u32( prio, M_PRIO_HIGH );
 
   T_surrender_objects( ctx->seized_objects, rtems_task_delete );
 
@@ -150,6 +161,9 @@ static void RtemsModelTaskMgr_Teardown(
   DeleteTestSyncSema( ctx->runner_wakeup );
   T_log( T_NORMAL, "Deleting Lock 0 ReleaseTestSyncSema Semaphore" );
   DeleteTestSyncSema( ctx->lock_0 );
+  T_log( T_NORMAL, "Deleting Worker Flags TestSync Semaphore" );
+  DeleteTestSyncSema( ctx->worker0_flag );
+  DeleteTestSyncSema( ctx->worker1_flag );
 }
 
 void RtemsModelTaskMgr_Teardown_Wrap( void *arg )
