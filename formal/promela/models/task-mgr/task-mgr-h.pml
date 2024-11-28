@@ -126,6 +126,11 @@ inline removeTask(tid, rc) {
 }
 
 inline isHoldingMutex(tid, holding, rc) {
+    /*
+    If a given task is holding any bin semaphores
+    which use a locking protocol: 
+    return true, else false
+    */
     atomic {
         holding = false;
         if

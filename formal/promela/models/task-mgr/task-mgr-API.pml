@@ -1,3 +1,4 @@
+// Model of rtems_task_create(...)
 inline task_create(task, tid, name, prio, preempt, tidRC, rc) {
     atomic {
         if
@@ -21,7 +22,7 @@ inline task_create(task, tid, name, prio, preempt, tidRC, rc) {
 }
 //*/
 
-///*
+// Model of rtems_task_start(...)
 inline task_start(task, entry, rc) {
     atomic {
         if
@@ -46,9 +47,8 @@ inline task_start(task, entry, rc) {
         fi
     }
 }
-//*/
 
-
+// Model of rtems_task_suspend(...)
 inline task_suspend(task, rc) {
     atomic {
         if
@@ -63,6 +63,7 @@ inline task_suspend(task, rc) {
     }
 }
 
+// Model of rtems_task_is_suspended(...)
 inline task_isSuspend(task, rc) {
     atomic {
         if
@@ -76,6 +77,7 @@ inline task_isSuspend(task, rc) {
     }
 }
 
+// Model of rtems_task_resume(...)
 inline task_resume(task, rc) {
     atomic {
         if
@@ -93,6 +95,7 @@ inline task_resume(task, rc) {
     }
 }
 
+// Model of rtems_task_delete(...) 
 inline task_delete(task, tid, rc) {
     atomic {
         if
@@ -119,7 +122,7 @@ inline task_delete(task, tid, rc) {
 }
 //*/
 
-
+// Model of rtems_task_set_priority(...) 
 inline task_setPrio(tid, new, old, rc) {
     atomic {
         if
@@ -153,6 +156,7 @@ inline task_setPrio(tid, new, old, rc) {
         fi
     }
 }
+
 /*
 inline task_setPrio(task, sched, prio, rc) {
     if
