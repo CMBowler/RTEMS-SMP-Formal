@@ -45,7 +45,7 @@
 #include "../common/rtems.pml"
 #define TASK_MAX 5 
 #define SEMA_MAX 6
-#define SCHED_MAX 4
+#define SCHED_MAX 1
 #include "../common/model.pml"
 
 #include "task-mgr-h.pml"
@@ -55,14 +55,15 @@ byte sendrc;            // Sender global variable
 byte recrc;             // Receiver global variable
 byte recout[TASK_MAX] ; // models receive 'out' location.
 
+// Create global variables for scenarios
+
+// Model return status
 byte createRC;
 byte startRC;
 byte deleteRC;
 byte suspendRC;
 byte isSuspendRC;
 byte resumeRC;
-
-byte task_id[TASK_MAX];
 
 // Task Create
 bool task_0_name;
@@ -104,13 +105,15 @@ byte task_1_Entry;
 bool testPrio;
 bool raiseWithMutex;
 
-
+// Declare Scenario Types
 mtype = {CreateDestroy, TaskStart, SuspResume, ChangePrio}
 
 inline chooseScenario() {
 
     // Defaults
     task_control = 28;	// 0001 1100 Task[1] reserved for runner.
+    
+    // Initialise scenario variables.
 
     // Task Create
     createTask = true;
@@ -146,6 +149,8 @@ inline chooseScenario() {
     testPrio = false;
     raiseWithMutex = false;
 
+    // Set runner task state to Ready
+    // as this task is active from the start of all scenarios.
     tasks[RUNNER_ID].state = Ready;
 
     if
@@ -164,13 +169,13 @@ inline chooseScenario() {
             deleteTask = false;
             // Create/Delete
             if
-            ::  task_0_name = 0;                        atomic{printf("@@@ %d LOG Invalid Name ",_pid); printm(scenario); nl()};
-            ::  createPrio = 0;                         atomic{printf("@@@ %d LOG Invalid Priority (0) ",_pid); printm(scenario); nl()};
-            ::  createPrio = MAX_PRIO;                  atomic{printf("@@@ %d LOG Invalid Priority (MAX) ",_pid); printm(scenario); nl()};
-            ::  createValId = false;                    atomic{printf("@@@ %d LOG Invalid Id ",_pid); printm(scenario); nl()};
+            ::  task_0_name = 0;                        atomic{printf("@@@ %d LOG Create: Invalid Name ",_pid); printm(scenario); nl()};
+            ::  createPrio = 0;                         atomic{printf("@@@ %d LOG Create: Invalid Priority (0) ",_pid); printm(scenario); nl()};
+            ::  createPrio = MAX_PRIO;                  atomic{printf("@@@ %d LOG Create: Invalid Priority (MAX) ",_pid); printm(scenario); nl()};
+            ::  createValId = false;                    atomic{printf("@@@ %d LOG Create: Invalid Id ",_pid); printm(scenario); nl()};
 //TODO      ::  scenario = TooMany;
             ::  createTask = false; deleteTask = true;  atomic{printf("@@@ %d LOG Delete: Invalid Id ",_pid); printm(scenario); nl()};
-            ::  deleteTask = true;                      atomic{printf("@@@ %d LOG Success ",_pid); printm(scenario); nl()};
+            ::  deleteTask = true;                      atomic{printf("@@@ %d LOG Create: Success ",_pid); printm(scenario); nl()};
             fi
     ::  scenario == TaskStart ->
             startTask = false;
@@ -189,8 +194,8 @@ inline chooseScenario() {
             ::  suspValId = false;                          atomic{printf("@@@ %d LOG Start: Invalid Suspend Id ",_pid); printm(scenario); nl()};
             ::  resumeValId = false;                        atomic{printf("@@@ %d LOG Start: Invalid Resume Id ",_pid); printm(scenario); nl()};
             ::  doubleSuspend = true;                       atomic{printf("@@@ %d LOG Start: Already Suspended ",_pid); printm(scenario); nl()};
-            ::  suspendSelf = true; suspendTask = false;    atomic{printf("@@@ %d LOG Start: Suspend/Resume ",_pid); printm(scenario); nl()};
-            ::  skip;                               // default
+            ::  suspendSelf = true; suspendTask = false;    atomic{printf("@@@ %d LOG Start: Self Suspend ",_pid); printm(scenario); nl()};
+            ::  skip;                                       atomic{printf("@@@ %d LOG Start: Suspend/Resume ",_pid); printm(scenario); nl()};
             fi
     ::  scenario == ChangePrio ->
             // Set Priority
@@ -456,9 +461,7 @@ repeat_start:
 
 }
 
-// global task variables
-
-proctype Task0(byte taskId) priority MED_PRIO {
+proctype Task0(byte taskId) {
     assert(_priority == MED_PRIO);
     assert(taskId < TASK_MAX);
     /*
@@ -495,7 +498,6 @@ proctype Task0(byte taskId) priority MED_PRIO {
             ::  testPrio == true ->
                     byte setPriorityRC;
                     byte old_prio = 1;
-                    //byte valid_prio = 1;
                     
                     printf("@@@ %d DECL byte priority 0\n",_pid);
 
@@ -575,7 +577,7 @@ proctype Task2 (byte taskid) {
 }
 */
 
-proctype PrioInheritance () {
+proctype PrioInheritance() {
     //printf("@@@ %d prio Inheritance Start \n",_pid);
     /* RTEMS Case:
     If the task is currently holding any binary semaphores which use a locking protocol, 
@@ -601,21 +603,23 @@ proctype PrioInheritance () {
     od
 }
 
-init priority MED_PRIO{
-	pid nr;
+init {
+    pid nr;
 
-	printf("Task Manager Model running.\n");
-	printf("Setup...\n");
+    printf("Task Manager Model running.\n");
+    printf("Setup...\n");
 
-	printf("@@@ %d NAME Task_Manager_TestGen\n",_pid)
+    printf("@@@ %d NAME Task_Manager_TestGen\n",_pid)
 
-	outputDefines();
-	outputDeclarations();
+    outputDefines();
+    outputDeclarations();
 
-	chooseScenario();
-	printf("@@@ %d INIT\n",_pid);
+    chooseScenario();
+    printf("@@@ %d INIT\n",_pid);
 
-	printf("Run...\n");
+    printf("Run...\n");
+
+    set_priority(_pid, MED_PRIO);
 
 
     if 
@@ -629,8 +633,8 @@ init priority MED_PRIO{
     ::  else
     fi
 
-	run System();
-	run Clock();
+    run System();
+    run Clock();
     run PrioInheritance() priority ISR_PRIO;
 
     TestSyncRelease(SEMA_LOCK);

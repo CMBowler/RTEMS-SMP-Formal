@@ -74,7 +74,7 @@ rtems_id CreateTestSyncMutex( char * name )
   sc = rtems_semaphore_create(
     rtems_build_name( name[ 0 ], name[ 1 ], name[ 2 ], name[ 3 ] ),
     0,
-    RTEMS_DEFAULT_ATTRIBUTES & RTEMS_INHERIT_PRIORITY,
+    RTEMS_BINARY_SEMAPHORE & RTEMS_INHERIT_PRIORITY & RTEMS_PRIORITY,
     0,
     &id
   );
