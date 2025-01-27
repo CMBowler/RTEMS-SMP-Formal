@@ -337,7 +337,7 @@ repeat_start:
     ::  else -> skip
     fi
 
-    // Procedure for Creating and Starting Task0
+    // Procedure for Creating and Starting Task1
     if
     ::  testPrio == true ->
             // Create and Start New Task (1)
@@ -512,7 +512,7 @@ proctype Task0(byte taskId) {
                     // Check Priority
                     changePriority(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
 
-                    // Chage Priority to High
+                    // Chage Priority to Low
                     changePriority(taskId, LOW_PRIO, old_prio, setPriorityRC);
 
                     // Check Priority
@@ -645,7 +645,7 @@ init {
 
 	_nr_pr == 1;
 
-	#ifdef TESTGEN
+	#ifdef TEST_GEN
 	assert(false);
 	#endif
 

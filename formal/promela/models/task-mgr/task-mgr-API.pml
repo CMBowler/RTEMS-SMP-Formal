@@ -1,4 +1,24 @@
-// Model of rtems_task_create(...)
+/*
+ * task_create(task, tid, name, prio, preempt, tidRC, rc)
+ *
+ * Simulates a call to rtems_task_create
+ *   task : struct to store task information
+ *   tid : variable storing new task ID
+ *   name : name given to new task
+ *   prio : task priority
+ *   preempt : boolean field in task mode
+ *   tidRC : return code for if a new task ID could be allocated
+ *   rc : updated with the return code when task_create completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_create(name, prio, stack, mode, tid);
+ *     `name` models `rtems_name name`
+ *     `prio` models `rtems_task_priority initial_priority`
+ *     `stack` models `size_t stack_size` set to `RTEMS_MINIMUM_STACK_SIZE`
+ *     `mode` models `rtems_mode initial_modes`, set to `RTEMS_DEFAULT_MODES`
+ *     `tid` models `rtems_id           *id`
+ *
+ */
 inline task_create(task, tid, name, prio, preempt, tidRC, rc) {
     atomic {
         if
@@ -20,9 +40,27 @@ inline task_create(task, tid, name, prio, preempt, tidRC, rc) {
         fi
     }
 }
-//*/
 
-// Model of rtems_task_start(...)
+/*
+ * task_start(task, entry, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *  task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *  tid : id of the relevant task
+ *  entry : semaphore corresponding to a process, 
+            upon calling task_start the semaphore releases a 
+            waiting process, modelling the starting of a task.
+ *  rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_start(tid, entry, arg);
+ *     `tid` models `rtems_id id`
+ *     `entry` models `rtems_task_entry entry_point`
+ *     `arg` models `rtems_task_argument argument` and
+ *                  is not utilised in the model. 
+ *
+ */
 inline task_start(task, entry, rc) {
     atomic {
         if
@@ -48,7 +86,20 @@ inline task_start(task, entry, rc) {
     }
 }
 
-// Model of rtems_task_suspend(...)
+/*
+ * task_suspend(task, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *   tid : id of the relevant task
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_suspend(tid);
+ *     `tid` models `rtems_id id`
+ *
+ */
 inline task_suspend(task, rc) {
     atomic {
         if
@@ -63,7 +114,20 @@ inline task_suspend(task, rc) {
     }
 }
 
-// Model of rtems_task_is_suspended(...)
+/*
+ * task_isSuspend(task, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *   tid : id of the relevant task
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_is_suspended(tid);
+ *     `tid` models `rtems_id id`
+ *
+ */
 inline task_isSuspend(task, rc) {
     atomic {
         if
@@ -77,7 +141,20 @@ inline task_isSuspend(task, rc) {
     }
 }
 
-// Model of rtems_task_resume(...)
+/*
+ * task_resume(task, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *   tid : id of the relevant task
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_resume(tid);
+ *     `tid` models `rtems_id id`
+ *
+ */
 inline task_resume(task, rc) {
     atomic {
         if
@@ -95,7 +172,20 @@ inline task_resume(task, rc) {
     }
 }
 
-// Model of rtems_task_delete(...) 
+/*
+ * task_resume(task, tid, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *   tid : id of the relevant task
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_resume(tid);
+ *     `tid` models `rtems_id id`
+ *
+ */
 inline task_delete(task, tid, rc) {
     atomic {
         if
@@ -120,9 +210,26 @@ inline task_delete(task, tid, rc) {
         fi
     }
 }
-//*/
 
-// Model of rtems_task_set_priority(...) 
+/*
+ * task_setPrio(tid, new, old, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   task : struct storing the relevant task information
+ *          task = tasks[tid]
+ *   tid : id of the relevant task
+ *   new : new priority that the relevant task will be set to
+ *   old : priority of the relevant task before setting it to the
+           value of new
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_set_priority(tid, new, old);
+ *      `tid` models `rtems_id id`
+ *      `new` models `rtems_task_priority new_priority`
+ *      `old` models `rtems_task_priority old_priority`
+ *
+ */
 inline task_setPrio(tid, new, old, rc) {
     atomic {
         if
