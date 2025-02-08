@@ -17,7 +17,8 @@
 #define MAX_PRIO        255
 #define BAD_PRIO        MAX_PRIO
 #define CURRENT_PRIO    0
-#define LOW_PRIO        1
+#define SUSPEND_PRIO    1
+#define LOW_PRIO        2
 #define MED_PRIO        5
 #define HIGH_PRIO       10
 #define ISR_PRIO        11
@@ -61,6 +62,7 @@ inline outputDeclarations () {
     printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
     printf("@@@ %d DECL byte resumeRC 0\n",_pid);
     printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
+    printf("@@@ %d DECL byte wakeAfterRC 0\n", _pid);
     // Rather than refine an entire Task array, we refine array 'slices'
     //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
     //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);

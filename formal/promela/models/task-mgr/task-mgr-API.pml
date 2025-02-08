@@ -33,7 +33,6 @@ inline task_create(task, tid, name, prio, preempt, tidRC, rc) {
 		::	tid == 0 ->
 				rc = RC_InvAddr;
         ::  else ->
-				task.pmlid = _pid;
 				task.prio = prio;
 				task.preemptable = preempt;
 				task.state = Dormant;
@@ -109,6 +108,9 @@ inline task_suspend(task, rc) {
                 rc = RC_AlrSuspd;
         ::  else ->
                 task.state = Blocked;
+                task.suspPrio = task.prio;
+                task.prio = SUSPEND_PRIO;
+                set_priority(task.pmlid, SUSPEND_PRIO)
                 rc = RC_OK;
         fi
     }
@@ -165,7 +167,9 @@ inline task_resume(task, rc) {
                 :: task.state != Blocked ->
                     rc = RC_IncState;
                 :: else ->
-                    task.state = Ready ->
+                    task.state = Ready;
+                    task.prio = task.suspPrio;
+                    set_priority(task.pmlid, task.prio)
                     rc = RC_OK;
                 fi
         fi
@@ -173,7 +177,7 @@ inline task_resume(task, rc) {
 }
 
 /*
- * task_resume(task, tid, rc)
+ * task_delete(task, tid, rc)
  *
  * Simulates a call to rtems_task_start
  *   task : struct storing the relevant task information
@@ -182,7 +186,7 @@ inline task_resume(task, rc) {
  *   rc : updated with the return code when task_start completes
  *
  * Corresponding RTEMS call:
- *   rc = rtems_task_resume(tid);
+ *   rc = rtems_task_delete(tid);
  *     `tid` models `rtems_id id`
  *
  */
@@ -280,12 +284,47 @@ inline task_setPrio(task, sched, prio, rc) {
                     ::  else ->
 
 }
+*/
 
-inline rtems_task_wake_after(ticks) {
+/*
+ * task_wakeAfter(ticks, rc)
+ *
+ * Simulates a call to rtems_task_start
+ *   ticks : ticks that should pass before the task is awakened
+ *   rc : updated with the return code when task_start completes
+ *
+ * Corresponding RTEMS call:
+ *   rc = rtems_task_wake_after(ticks);
+ *      `ticks` models `rtems_interval ticks`
+ *
+ */
+inline task_wakeAfter(time, rc) {
 
     // ticks == 0: RTEMS_YIELD_PROCESSOR
-    int count = 0;
+
+    // Find the calling tasks id
+    atomic {
+        byte tid = 0
+        do
+        ::  tid == TASK_MAX -> printf("Wake Error\n", _pid); break
+        ::  tasks[tid].pmlid == _pid -> break
+        ::  else ->  tid = tid + 1;
+        od
+
+        if
+        ::  tid == TASK_MAX -> skip;
+        ::  else ->
+                    //printf("Setting Wake Time\n", _pid);
+                    tasks[tid].state = TimeWait;
+                    tasks[tid].ticks = time
+        fi
+    }
+    
+    // Wait out Timer
     do
-    ::  
+    ::  task[tid].state == Ready -> break;
+    ::  else -> skip;
+    od
+
+    rc = RC_OK;
 }
-*/

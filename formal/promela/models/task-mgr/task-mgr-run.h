@@ -2,6 +2,8 @@
 
 static void Worker{0}_0( rtems_task_argument arg )
 {{
+
+  T_log( T_NORMAL, "Worker 0 Started" );
   Context *ctx;
   rtems_event_set events;
 
@@ -20,7 +22,7 @@ static void Worker{0}_0( rtems_task_argument arg )
   //ReleaseTestSyncSema( ctx->lock_0 );
   
   // Wait for events so we don't terminate
-  rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
+  rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
 
 }}
 
@@ -43,7 +45,30 @@ static void Worker{0}_1( rtems_task_argument arg )
   //ReleaseTestSyncSema( ctx->runner_wakeup );
   //ReleaseTestSyncSema( ctx->lock_0 );
   // Wait for events so we don't terminate
-  rtems_event_receive( RTEMS_ALL_EVENTS, RTEMS_DEFAULT_OPTIONS, 0, &events );
+  rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
+
+}}
+
+static void Worker{0}_2( rtems_task_argument arg )
+{{
+  Context *ctx;
+  rtems_event_set events;
+
+  ctx = (Context *) arg;
+#ifdef TASK_2
+    T_log( T_NORMAL, "Worker 2 Running" );
+    TestSegment7( ctx );
+    T_log( T_NORMAL, "Worker 2 finished" );
+#endif
+
+  // (void) rtems_task_suspend( RTEMS_SELF );
+  // Ensure we hold no semaphores
+  //ReleaseTestSyncSema( ctx->worker0_wakeup );
+  //ReleaseTestSyncSema( ctx->worker1_wakeup );
+  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->lock_0 );
+  // Wait for events so we don't terminate
+  rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
 
 }}
 
@@ -83,7 +108,7 @@ static void RtemsModelTaskMgr_Setup{0}(
   // Add worker to the taskId array:
   tasks[1] = Worker{0}_0;
   tasks[2] = Worker{0}_1;
-
+  tasks[3] = Worker{0}_2;
   
 }}
 
@@ -138,6 +163,9 @@ void RtemsModelTaskMgr_Run{0}(
                         rtems_task_priority,
                         rtems_task_priority *
                     ),
+  rtems_status_code (*t_wakeAfter)(
+                        rtems_interval
+                    ),
   unsigned int         wait_class,
   int                  waiting_for_event
 )
@@ -172,6 +200,7 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->t_isSuspend = t_isSuspend;
   ctx->t_resume = t_resume;
   ctx->t_setPriority = t_setPriority;
+  ctx->t_wakeAfter = t_wakeAfter;
 
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;

@@ -24,6 +24,8 @@ typedef enum {
 
 rtems_id CreateTestSyncSema( char * name );
 
+rtems_id CreateTestSyncMutex( char * name );
+
 void DeleteTestSyncSema( rtems_id id );
 
 void ObtainTestSyncSema( rtems_id id );

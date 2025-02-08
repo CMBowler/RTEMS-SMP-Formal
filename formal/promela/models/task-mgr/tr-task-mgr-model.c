@@ -210,7 +210,7 @@ void RtemsModelTaskMgr_Cleanup(
 
   events = 0;
   sc = rtems_event_receive(
-    RTEMS_ALL_EVENTS,
+    RTEMS_EVENT_9,
     RTEMS_NO_WAIT | RTEMS_EVENT_ANY,
     0,
     &events

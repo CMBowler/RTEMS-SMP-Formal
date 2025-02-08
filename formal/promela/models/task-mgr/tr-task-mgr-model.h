@@ -73,38 +73,42 @@ typedef struct {
                         rtems_attribute, 
                         rtems_id *
                     ); 
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_start )( 
                         rtems_id,
                         rtems_task_entry,
                         rtems_task_argument
                     );
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_delete )(
                         rtems_id
                     );
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_suspend )(
                         rtems_id
                     );
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_isSuspend )(
                         rtems_id
                     );               
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_resume )(
                         rtems_id
                     );
-    // copy of the corresponding RtemsModelEventsMgr_Run() parameter
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code (*t_setPriority)(
                         rtems_id,
                         rtems_task_priority,
                         rtems_task_priority *
                     );
+    // copy of the corresponding RtemsModelTaskMgr_Run() parameter
+    rtems_status_code ( *t_wakeAfter )(
+                        rtems_interval
+                    );
     unsigned int wait_class; // copy of the corresponding
-                            // RtemsModelEventsMgr_Run() parameter
+                            // RtemsModelTaskMgr_Run() parameter
     int waiting_for_event; // copy of the corresponding
-                            // RtemsModelEventsMgr_Run() parameter
+                            // RtemsModelTaskMgr_Run() parameter
     int this_test_number; // test number used to identify a test runner instance
     rtems_id receiver_id; // receiver ID used for the event send action.
     rtems_event_set events_to_send; // events to send for the event send action

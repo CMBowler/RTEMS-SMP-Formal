@@ -145,3 +145,10 @@ static rtems_status_code TaskSetPriority(
                                     old_priority
                                 );
 }
+
+static rtems_status_code TaskWakeAfter(
+    rtems_interval interval
+)
+{
+    return rtems_task_wake_after( interval );
+}
