@@ -30,6 +30,8 @@
 
 #define CLEAR_TASKS     255
 
+#define PROC_YIELD      2
+
 byte task_control = CLEAR_TASKS;
 
 chan interrupt_channel = [1] of { byte, byte };
@@ -163,18 +165,173 @@ inline isHoldingMutex(tid, holding, rc) {
     }
 }
 
-inline ObtainMutex(tid, sid) {
+inline schedSignal(tid) {
+    taskSignal!0;
+    sched[tid]?0;
+}
+
+inline ObtainSema(tid, sid) {
+    
+    do
+    ::  test_sync_sema[sid] == false ->
+            sema_wait[sid]!tid;
+            tasks[tid].state = Blocked;
+            schedSignal(tid);
+    ::  else -> break;
+    od   
     TestSyncObtain(sid);
+}
+
+inline ReleaseSema(tid, sid) {
+    TestSyncRelease(sid);
+    sema_ready!sid;
+}
+
+inline ObtainMutex(tid, sid) {
+    ObtainSema(tid, sid)
     tasks[tid].mutexs[sid] = 1;
     tasks[tid].HoldingMutex = true;
 }
 
 inline ReleaseMutex(tid, sid) { 
     bool rc; // TODO 
+    bool wasHolding = tasks[tid].HoldingMutex;
     if
     ::  tasks[tid].mutexs[sid] == 1 ->
-            TestSyncRelease(sid);
+            ReleaseSema(tid, sid)
             isHoldingMutex(tid, tasks[tid].HoldingMutex, rc);
+            // If no Longer Holding a Mutex -> Allow Prio to Lower
+            if
+            ::  tasks[tid].HoldingMutex == false && wasHolding -> 
+                    updateSchedQ(tasks[tid]);
+            :: else 
+            fi
     ::  else -> rc = false
     fi
+}
+
+inline insertSchedQ(newTask) {
+    byte i=0;
+    byte insertIndex;
+    do
+    ::  taskQueue[i] == 0 || tasks[taskQueue[i]].prio < newTask.prio ->
+            insertIndex = i;
+            i = TASK_MAX-2;           
+            do
+            ::  i == insertIndex -> break;
+            ::  else ->
+                    taskQueue[i] = taskQueue[i-1];
+                    i=i-1;
+            od
+            taskQueue[i] = newTask.tid;
+            break;
+    ::  else -> i = i+1; 
+            if 
+            ::  i == TASK_MAX -> break;
+            ::  else -> skip;
+            fi
+    od
+
+    // Debug : print schedQ
+    i = 0;
+    printf(" LOG : Updated Task Queue: ")
+    do
+    ::  i == TASK_MAX -> break;
+    ::  else ->     
+            printf("%d ", taskQueue[i]);
+            i=i+1;
+    od
+    nl();
+}
+
+inline removeSchedQ(task) {
+    byte index=0;
+    // Remove task from Scheduler Queue
+    do
+    ::  taskQueue[index] == task.tid ->
+            do
+            ::  index == TASK_MAX-2 -> break;
+            ::  else ->
+                    taskQueue[index] = taskQueue[index+1];
+                    index = index+1;
+            od
+    ::  else -> index = index+1;
+                    if 
+                    ::  index == TASK_MAX -> break;
+                    ::  else
+                    fi
+    od
+}
+
+inline updateSchedQ(task) {
+    removeSchedQ(task);
+    insertSchedQ(task);
+}
+
+inline SuspendResume(myId, tid) {
+    bool repeated = false;
+
+    if
+    ::  suspValId == true ->
+            suspendId = tid;
+    ::  else // Set to 0
+    fi
+    if
+    ::  resumeValId == true ->
+            resumeId = tid;
+    ::  else ->
+            resumeId = myId; // Should be Invalid
+    fi
+
+suspRepeat:
+    // Suspend
+    printf("@@@ %d CALL task_suspend %d suspendRC\n",
+                _pid, suspendId, suspendRC);
+    task_suspend(myId, tasks[suspendId], suspendRC);
+    printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
+
+    // Scenario: Already Suspended
+    if
+    ::  doubleSuspend == true && repeated == false ->
+            repeated = true;
+            goto suspRepeat;
+    ::  else
+    fi
+    //Check is suspended
+    //...
+
+    //Resume
+    printf("@@@ %d CALL task_resume %d resumeRC\n", 
+                _pid, resumeId, resumeRC);
+    task_resume(myId, tasks[resumeId], resumeRC);
+    printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
+
+    if 
+    ::  resumeValId == false ->
+            // Resume Process properly so It can terminate
+            printf("@@@ %d CALL task_resume %d resumeRC\n", 
+                        _pid, tid, resumeRC);
+            task_resume(myId, tasks[tid], resumeRC);
+            printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC)
+    ::  else
+    fi
+}
+
+inline changePriority (callerId, taskid, prio, oldPrio, rc) {
+    // Change the Priority of the given task
+    // If prio = 0 -> returns current Priority with no update.
+    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                            _pid, taskid, prio, old_prio, rc);
+    task_setPrio(callerId, tasks[taskid], prio, old_prio, rc);
+    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
+}
+
+inline changeCheckPriority (callerId, taskid, prio, oldPrio, rc) {
+    // Change the Priority of the given task
+    // If prio = 0 -> returns current Priority with no update.
+    printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
+                            _pid, taskid, prio, old_prio, rc);
+    task_setPrio(callerId, tasks[taskid], prio, old_prio, rc);
+    printf("@@@ %d CALL oldPrio %d\n",_pid, old_prio);
+    printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
 }

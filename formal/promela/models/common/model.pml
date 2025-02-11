@@ -22,6 +22,7 @@
 typedef Task {
   byte nodeid; // So we can spot remote calls
   byte pmlid; // Promela process id
+  byte tid; // Task ID
   mtype state = Zombie; // {Zombie,Dormant,Ready,TimeWait,OtherWait,...}
   byte start;
   bool preemptable;
@@ -36,8 +37,23 @@ typedef Task {
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
 #define BAD_ID TASK_MAX   // this ID and higher are considered invalid
 
+// Signals task has finished step of execution
+chan taskSignal = [1] of {byte};
 
+// Signal task to execute
+chan sched[(TASK_MAX)] = [1] of {byte};
 
+// Clock signals new loop of system
+chan clk = [2] of {byte};
+
+// Signal for Semaphore Release
+chan sema_signal[SEMA_MAX] = [TASK_MAX] of {byte};
+
+chan sema_wait[SEMA_MAX] = [TASK_MAX] of {byte};
+
+chan sema_ready = [SEMA_MAX] of {byte};
+
+byte taskQueue[TASK_MAX];
  /*
  *  Task State Changes
  *
@@ -85,31 +101,33 @@ proctype System () {
   byte taskid ;
   bool liveSeen;
 
+  byte maxCount = 0; // DEBUG
+
   printf("@@@ %d LOG System running...\n",_pid);
 
   loop:
   taskid = 1;
   liveSeen = false;
 
-  printf("@@@ %d LOG Loop through tasks...\n",_pid);
-  atomic {
-    printf("@@@ %d LOG Scenario is ",_pid);
-    printm(scenario); nl();
-  }
+  clk!1; 
+  clk?0; // Wait for Clock to Tick
+
+  //printf("@@@ %d LOG Loop through tasks...\n",_pid);
+
   do   // while taskid < TASK_MAX ....
   ::  taskid == TASK_MAX -> break;
   ::  else ->
-      atomic {
-        printf("@@@ %d LOG Task %d state is ",_pid,taskid);
-        printm(tasks[taskid].state); nl()
-      }
+      //atomic {
+        //printf("@@@ %d LOG Task %d state is ",_pid,taskid);
+        //printm(tasks[taskid].state); nl()
+      //}
       if
       :: tasks[taskid].state == Zombie -> taskid++
       :: else ->
          if
          ::  tasks[taskid].state == OtherWait
              -> tasks[taskid].state = Ready
-                printf("@@@ %d STATE %d Ready\n",_pid,taskid)
+                //printf("@@@ %d STATE %d Ready\n",_pid,taskid)
          ::  else -> skip
          fi
          liveSeen = true;
@@ -117,7 +135,42 @@ proctype System () {
       fi
   od
 
-  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
+  //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
+
+  // Semaphore Check sub-process: 
+  byte sema_id = 0;
+  byte wait_tid;
+  do
+  ::  sema_id < SEMA_MAX -> 
+        if
+        ::  sema_ready?sema_id -> 
+              do
+              ::  sema_wait[sema_id]?wait_tid ->
+                    //printf("LOG : Task %d Ready now Sema is Free.\n", wait_tid);
+                    tasks[wait_tid].state = Ready;
+                    break;
+              ::  timeout -> break;
+              od
+        ::  else
+        fi
+        sema_id=sema_id+1;
+  ::  else -> break;
+  od
+  
+  byte schedID = 0;
+  do
+  ::  tasks[taskQueue[schedID]].state == Ready ->
+        // Choose Highest Priority Task that is in the state: Ready
+        //printf("LOG : Scheduling Task %d to Run\n", taskQueue[schedID]);
+        sched[taskQueue[schedID]]!0; // Signal Task to Run.
+        taskSignal?0; // Wait for signal from running task.
+        break;
+  ::  else -> schedID = schedID+1; 
+        if
+        ::  schedID == TASK_MAX -> break;
+        ::  else
+        fi
+  od
 
   if
   ::  liveSeen -> goto loop
@@ -125,6 +178,8 @@ proctype System () {
   fi
   printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
   stopclock = true;
+  clk?0;           // Wait for Clock Tick
+  clk!1;
 }
 
 /*
@@ -141,28 +196,40 @@ proctype Clock () {
   do
   ::  stopclock  -> goto stopped
   ::  !stopclock ->
-      printf(" (tick) \n");
-      tid = 1;
-      do
-      ::  tid == TASK_MAX -> break
-      ::  else ->
-          atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
-          if
-          ::  tasks[tid].state == TimeWait ->
-              tix = tasks[tid].ticks - 1;
-              // printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
+      atomic {
+
+        clk!0;
+        clk?1;
+
+        printf(" (tick) \n");
+        tid = 1;
+        do
+        ::  tid == TASK_MAX -> break
+        ::  else ->
+            //atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
+
               if
-              ::  tix == 0
-                  tasks[tid].tout = true
-                  tasks[tid].state = Ready
-                  printf("@@@ %d STATE %d Ready\n",_pid,tid)
-              ::  else
-                  tasks[tid].ticks = tix
+              ::  tasks[tid].state == TimeWait || tasks[tid].state == TimeBlocked ->
+                  tix = tasks[tid].ticks - 1;
+                  //printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
+                  if
+                  ::  tix <= 0
+                      tasks[tid].tout = true
+                      if 
+                      ::  tasks[tid].state == TimeWait ->
+                            tasks[tid].state = Ready;
+                      ::  tasks[tid].state == TimeBlocked ->
+                            tasks[tid].state = Blocked;
+                      fi
+                      //printf("@@@ %d STATE %d Ready\n",_pid,tid)
+                  ::  else
+                      tasks[tid].ticks = tix
+                  fi
+              ::  else // state != TimeWait
               fi
-          ::  else // state != TimeWait
-          fi
-          tid = tid + 1
-      od
+            tid = tid + 1
+        od
+      }
   od
 stopped:
   printf("@@@ %d LOG Clock Stopped\n",_pid);
