@@ -12,14 +12,14 @@
  */
 
 
-
+inline nl() { printf("\n") } // Useful shorthand
 
  /*
  *  Common Task Definition
  *
  *  need text here to explain usage
  */
-typedef Task {
+typedef Task {  // rename as Task_Common ? Common_Task
   byte nodeid; // So we can spot remote calls
   byte pmlid; // Promela process id
   byte tid; // Task ID
@@ -59,6 +59,8 @@ Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
  * the block loses its atomic behaviour and yields to other Promela processes
  *
  * It is used to model a task that has been suspended for any reason.
+ * It should be invoked by a task proctype in the model in a situation where
+ * the corresponding RTEMS task would be suspended.
  */
 inline waitUntilReady(id){
   atomic{
@@ -69,11 +71,10 @@ inline waitUntilReady(id){
   printf("@@@ %d STATE %d Ready\n",_pid,id)
 }
 
-inline nl() { printf("\n") } // Useful shorthand
+
+mtype scenario; // used in models to identify top-level scenario
 
 bool stopclock = false; // used by System to stop the Clock
-
-mtype scenario; // used in models to identify top-level senario
 
 /*
  * We need a process that periodically wakes up blocked processes.

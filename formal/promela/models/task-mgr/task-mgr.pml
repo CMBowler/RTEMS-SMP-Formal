@@ -281,7 +281,6 @@ proctype Runner(byte nid, myId) {
     fi
     */
 
-
 	// Task 0 Create Params
 	byte name = task_0_name;
     byte prio = createPrio;
