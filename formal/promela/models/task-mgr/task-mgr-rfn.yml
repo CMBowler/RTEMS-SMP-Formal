@@ -58,6 +58,8 @@ setPriorityRC_DCL: rtems_status_code
 
 wakeAfterRC_DCL: rtems_status_code
 
+globalCounter_DCL: int
+
 priority_DCL: rtems_task_priority
 
 taskID_DCL: rtems_id {0}[TASK_MAX];
@@ -89,12 +91,13 @@ WAIT: |
   Wait( semaphore[{}] );
 
 task_create: |
-  T_log( T_NORMAL, "Creating Task(%d, %d, %d, %d, RTEMS_MINIMUM_STACK_SIZE, %d)", {0}, {1}, {2}, {3}, {4}, {5});
-  {5} = ( *ctx->t_create )( mapName( {0} ), {1}, {2}, {3}, RTEMS_MINIMUM_STACK_SIZE, {4} ? &taskID[{4}] : NULL);
+  T_log( T_NORMAL, "Creating Task(%d, %d, RTEMS_MINIMUM_STACK_SIZE, %d, %d, %d)", {0}, {1}, {2}, {3}, {4});
+  {5} = ( *ctx->t_create )( mapName( {0} ), {1}, RTEMS_MINIMUM_STACK_SIZE, construct_mode({2}, 1, 1, 0), 
+                            {3}, {4} ? &taskID[{4}] : NULL);
   T_log( T_NORMAL, "Returned 0x%x from Create", {5} );
 
 task_start: |
-  T_log( T_NORMAL, "Starting Task(%d, %d, %d)", {0}, {1}, {2});
+  T_log( T_NORMAL, "Starting Task(%d)", {0});
   {2} = ( *ctx->t_start )( {0} ? taskID[{0}] : 0xffffffff, {1} ? tasks[{1}] : NULL, (rtems_task_argument)(void *)(ctx) );
   T_log( T_NORMAL, "Returned 0x%x from Start", {2} );
 
@@ -119,19 +122,23 @@ task_resume: |
   T_log( T_NORMAL, "Returned 0x%x from Resume", {1} );
 
 task_setPriority: |
-  T_log( T_NORMAL, "Setting Task %d Priority to %d", {0}, priority_inversion( {1} ) );
-  {3} = ( *ctx->t_setPriority )( {0} ? taskID[{0}] : 0xffffffff, {1} ? priority_inversion( {1} ) : RTEMS_CURRENT_PRIORITY, {2} ? &priority : NULL );
+  T_log( T_NORMAL, "Setting Task %d Priority to %d", {0}, {1} );
+  {3} = ( *ctx->t_setPriority )( {0} ? taskID[{0}] : 0xffffffff, {1} ? {1} : RTEMS_CURRENT_PRIORITY, {2} ? &priority : NULL );
   T_log( T_NORMAL, "Returned 0x%x from Set Priority", {3} );
 
 taskSelf_setPriority: |
-  T_log( T_NORMAL, "Setting Task Priority to %d",  priority_inversion( {1} ) );
-  {2} = ( *ctx->t_setPriority )( RTEMS_SELF, {0} ? priority_inversion( {0} ) : RTEMS_CURRENT_PRIORITY, {1} ? &priority : NULL );
+  T_log( T_NORMAL, "Setting Task Priority to %d",  {1} );
+  {2} = ( *ctx->t_setPriority )( RTEMS_SELF, {0} ? {0} : RTEMS_CURRENT_PRIORITY, {1} ? &priority : NULL );
   T_log( T_NORMAL, "Returned 0x%x from Set Priority", {2} );
 
 task_wakeAfter: |
   T_log( T_NORMAL, "Waking Task(%d) After %d ms", {0}, {1} );
   {2} = ( *ctx->t_wakeAfter )( {1} ? (rtems_interval){1} : RTEMS_YIELD_PROCESSOR );
   T_log( T_NORMAL, "Returned 0x%x from Wake After", {2} );
+
+updateCounter: |
+  T_rsc( globalCounter, {0} );
+  globalCounter++;
 
 createRC: |
   T_rsc( createRC, {0} );
@@ -159,7 +166,7 @@ wakeAfterRC: |
 
 oldPrio: |
   T_log( T_NORMAL, "Returned Priority: %d from Set Priority", priority );
-  T_eq_u32( priority, priority_inversion( {0} ));
+  T_eq_u32( priority, {0} );
 
 WaitForSuspend: |
   T_log( T_NORMAL, "Waiting for Task(%d) to Suspend", {0}, {1} );

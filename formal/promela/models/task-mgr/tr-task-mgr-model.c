@@ -96,15 +96,13 @@ void init_tid(rtems_id* id, int max) {
     }
 }
 
-rtems_task_priority priority_inversion(rtems_task_priority prio) {
-    // Fix later
-    int LOW_PRIO = 10;
-    int HIGH_PRIO = 1;
-    if (prio == LOW_PRIO) 
-        return HIGH_PRIO;
-    else if (prio == HIGH_PRIO)
-        return LOW_PRIO;
-    else return prio;
+rtems_mode construct_mode(bool preempt, bool ts, bool asr, int ISR) {
+  rtems_mode new_mode = 0;
+  new_mode |= preempt ? RTEMS_PREEMPT : RTEMS_NO_PREEMPT;
+  new_mode |= ts ? RTEMS_TIMESLICE : RTEMS_NO_TIMESLICE;
+  new_mode |= asr ? RTEMS_ASR : RTEMS_NO_ASR;
+  new_mode |= RTEMS_INTERRUPT_LEVEL(ISR);
+  return new_mode;
 }
 /*
 rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)

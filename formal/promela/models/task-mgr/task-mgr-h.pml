@@ -17,10 +17,9 @@
 #define MAX_PRIO        255
 #define BAD_PRIO        MAX_PRIO
 #define CURRENT_PRIO    0
-#define SUSPEND_PRIO    1
-#define LOW_PRIO        2
+#define LOW_PRIO        10
 #define MED_PRIO        5
-#define HIGH_PRIO       10
+#define HIGH_PRIO       1
 #define ISR_PRIO        11
 
 #define INVALID_ID      0
@@ -30,9 +29,11 @@
 
 #define CLEAR_TASKS     255
 
-#define PROC_YIELD      2
+#define PROC_YIELD      0
 
 byte task_control = CLEAR_TASKS;
+
+byte globalCounter = 0;
 
 chan interrupt_channel = [1] of { byte, byte };
 
@@ -68,6 +69,7 @@ inline outputDeclarations () {
     // Rather than refine an entire Task array, we refine array 'slices'
     //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
     //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
+    printf("@@@ %d DECL byte globalCounter 0\n", _pid);
     printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
     printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);
     printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
@@ -170,6 +172,13 @@ inline schedSignal(tid) {
     sched[tid]?0;
 }
 
+inline UpdateCount() {
+    atomic {
+        printf("@@@ %d CALL updateCounter %d\n", _pid, globalCounter);
+        globalCounter++
+    }
+}
+
 inline ObtainSema(tid, sid) {
     
     do
@@ -195,26 +204,29 @@ inline ObtainMutex(tid, sid) {
 
 inline ReleaseMutex(tid, sid) { 
     bool rc; // TODO 
-    bool wasHolding = tasks[tid].HoldingMutex;
-    if
-    ::  tasks[tid].mutexs[sid] == 1 ->
-            ReleaseSema(tid, sid)
-            isHoldingMutex(tid, tasks[tid].HoldingMutex, rc);
-            // If no Longer Holding a Mutex -> Allow Prio to Lower
-            if
-            ::  tasks[tid].HoldingMutex == false && wasHolding -> 
-                    updateSchedQ(tasks[tid]);
-            :: else 
-            fi
-    ::  else -> rc = false
-    fi
+    atomic {
+        if
+        ::  tasks[tid].mutexs[sid] == 1 ->
+                ReleaseSema(tid, sid)
+                isHoldingMutex(tid, tasks[tid].HoldingMutex, rc);
+                // If no Longer Holding a Mutex -> Allow Prio to Lower
+                if
+                ::  tasks[tid].HoldingMutex == false && 
+                    tasks[tid].inheritedPrio != 0 -> 
+                        updateSchedQ(tasks[tid]);
+                        tasks[tid].inheritedPrio = 0;
+                :: else 
+                fi
+        ::  else -> rc = false
+        fi
+    }
 }
 
 inline insertSchedQ(newTask) {
     byte i=0;
     byte insertIndex;
     do
-    ::  taskQueue[i] == 0 || tasks[taskQueue[i]].prio < newTask.prio ->
+    ::  taskQueue[i] == 0 || tasks[taskQueue[i]].prio > newTask.prio ->
             insertIndex = i;
             i = TASK_MAX-2;           
             do
@@ -232,7 +244,7 @@ inline insertSchedQ(newTask) {
             fi
     od
 
-    // Debug : print schedQ
+    ///* Debug : print schedQ
     i = 0;
     printf(" LOG : Updated Task Queue: ")
     do
@@ -242,6 +254,7 @@ inline insertSchedQ(newTask) {
             i=i+1;
     od
     nl();
+    //*/
 }
 
 inline removeSchedQ(task) {
@@ -255,11 +268,12 @@ inline removeSchedQ(task) {
                     taskQueue[index] = taskQueue[index+1];
                     index = index+1;
             od
-    ::  else -> index = index+1;
-                    if 
-                    ::  index == TASK_MAX -> break;
-                    ::  else
-                    fi
+    ::  else -> 
+            index = index+1;
+            if 
+            ::  index == TASK_MAX -> break;
+            ::  else
+            fi
     od
 }
 

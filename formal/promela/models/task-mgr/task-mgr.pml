@@ -48,10 +48,11 @@
 #define SCHED_MAX 1
 #include "../common/model.pml"
 
-#include "debug.pml"
+//#include "debug.pml"
 //Uncomment if no debug:
-//#include "task-mgr-h.pml"
+#include "task-mgr-h.pml"
 #include "task-mgr-API.pml"
+#include "task-mgr-scheduling.pml"
 
 byte sendrc;            // Sender global variable
 byte recrc;             // Receiver global variable
@@ -117,6 +118,12 @@ int sleepTime;
 
 bool sleepTask;
 
+// Task Mode
+bool task_0_preempt;
+bool task_1_preempt;
+
+//bool preempt;
+
 // Declare Scenario Types
 mtype = {CreateDestroy, TaskStart, SuspResume, ChangePrio, TaskSleep, Debug}
 
@@ -167,6 +174,10 @@ inline chooseScenario() {
     // Wake After
     resumeSleep = false;
     sleepTime = 10;
+
+    // Task Mode 
+    task_0_preempt = true;
+    task_1_preempt = true;
 
     // Set runner task state to Ready
     // as this task is active from the start of all scenarios.
@@ -232,6 +243,11 @@ inline chooseScenario() {
             ::  raiseWithMutex = true;      atomic{printf("@@@ %d LOG Start: Lower Priority while holding lock",_pid); nl()};
             ::  skip;                       atomic{printf("@@@ %d LOG Start: Lower Task0, Raise Task1",_pid); nl()};
             fi
+
+            if
+            ::  task_0_preempt = false;     atomic{printf("@@@ %d LOG Start: No Preemption: Task 0",_pid); nl()};
+            ::  skip;
+            fi
     ::  scenario == TaskSleep ->
             // Task Wake After
             sleepTask = true;
@@ -244,8 +260,6 @@ inline chooseScenario() {
 }
 
 proctype Runner(byte nid, myId) {
-
-    atomic {
 
     tasks[RUNNER_ID].pmlid = _pid;
 
@@ -271,7 +285,7 @@ proctype Runner(byte nid, myId) {
 	// Task 0 Create Params
 	byte name = task_0_name;
     byte prio = createPrio;
-    byte preempt = true;
+    byte preempt = task_0_preempt;
 	byte mode = 0;
 	byte attr = 0;
 	bool setRC;
@@ -300,12 +314,11 @@ proctype Runner(byte nid, myId) {
             fi
 
 		printf("@@@ %d CALL task_create %d %d %d %d %d createRC\n", 
-				_pid, name, prio, mode, attr, tsk0_id);
+				_pid, name, prio, preempt, attr, tsk0_id);
 
         task_create(tasks[tsk0_id], tsk0_id, name, prio, preempt, setRC, createRC);
 		
 		printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
-
     ::  else
     fi
 
@@ -328,10 +341,8 @@ proctype Runner(byte nid, myId) {
 repeat_start:
             printf("@@@ %d CALL task_start %d %d startRC\n", 
                     _pid, startId, entry);
-            task_start(tasks[startId], entry, startRC);
+            task_start(myId, tasks[startId], entry, startRC);
             printf("@@@ %d CALL startRC %d\n", _pid, startRC);
-
-            schedSignal(myId);
 
             if
             :: 	doubleStart == true ->
@@ -355,20 +366,19 @@ repeat_start:
             setTask(tsk1_ID, setRC);
             printf("@@@ %d CALL task_create %d %d %d %d %d createRC\n", 
                     _pid, task_1_name, prio, mode, attr, tsk1_ID);
-            task_create(tasks[tsk1_ID], tsk1_ID, task_1_name, prio, preempt, setRC, createRC);
+            task_create(tasks[tsk1_ID], tsk1_ID, task_1_name, prio, task_1_preempt,
+                	    setRC, createRC);
             printf("@@@ %d SCALAR createRC %d\n", _pid, createRC);
 
             //
-            task_start(tasks[tsk1_ID], task_1_Entry, startRC);
+            task_start(myId, tasks[tsk1_ID], task_1_Entry, startRC);
             printf("@@@ %d CALL task_start %d %d startRC\n", 
                     _pid, tsk1_ID, task_1_Entry);
             printf("@@@ %d CALL startRC %d\n", _pid, startRC);
-
-            schedSignal(myId);
-
     ::  else -> skip
     fi
 
+    UpdateCount();
 
     // At this point yield the processor over to any Ready Tasks
     printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
@@ -465,8 +475,6 @@ repeat_start:
     task_delete(tasks[myId], myId, deleteRC);
     // Signal to Sched Task is over.
     taskSignal!0;
-
-    }
 
 }
 
@@ -570,7 +578,7 @@ proctype Task0(byte myId) {
                             ReleaseMutex(myId, SEMA_LOCK);
                             // Check Priority
                             changeCheckPriority(myId, myId, CURRENT_PRIO, old_prio, setPriorityRC);
-                    ::  else
+                    ::  else -> UpdateCount();
                     fi       
             ::  else -> skip
             fi
@@ -628,6 +636,9 @@ proctype Task1(byte myId) {
 
             // Chage Priority to High
             //changePriority(taskId, HIGH_PRIO, old_prio, setPriorityRC);
+
+            UpdateCount();
+
             if 
             ::  testPrio == true ->
                     byte setPriorityRC;
@@ -647,11 +658,10 @@ proctype Task1(byte myId) {
                                 _pid, tsk0_id, resumeRC);
                     task_resume(myId, tasks[tsk0_id], resumeRC);
                     printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
-                    
-                    schedSignal(myId);
-
             ::  else
             fi
+
+            UpdateCount();
 
             ReleaseSema(myId, SEMA_TASK1_FIN);
 
@@ -740,28 +750,18 @@ init {
 
     TestSyncRelease(SEMA_LOCK);
 
-//    atomic {
-        run System() //priority ISR_PRIO;
-        run Clock() //priority ISR_PRIO;
-        run PrioInheritance() //priority ISR_PRIO;
-        if 
-        ::  scenario == Debug ->
-                run DebugRunner(RUNNER_ID) //priority MED_PRIO;
-        ::  else ->          
-                run Runner(0, RUNNER_ID) //priority MED_PRIO;
-                run Task0(TASK0_ID) //priority MED_PRIO;
-                run Task1(TASK1_ID) //priority MED_PRIO;
-        fi
-//    }
+    atomic {
+        run Scheduler();   
+        run Runner(0, RUNNER_ID); 
+        run Task0(TASK0_ID); 
+        run Task1(TASK1_ID);
+    }
 
-    // Once done, kill Interrupt Model process:
-    interrupt_channel ! INVALID_ID, 0;
+    _nr_pr == 1;
 
-	_nr_pr == 1;
+    #ifdef TEST_GEN
+    assert(false);
+    #endif
 
-	#ifdef TEST_GEN
-	assert(false);
-	#endif
-
-	printf("Task Manager Model finished !\n")
+    printf("Task Manager Model finished !\n")
 }

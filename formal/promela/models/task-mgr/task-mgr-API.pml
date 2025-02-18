@@ -62,7 +62,7 @@ inline task_create(task, id, name, prio, preempt, tidRC, rc) {
  *                  is not utilised in the model. 
  *
  */
-inline task_start(task, entry, rc) {
+inline task_start(callerId, task, entry, rc) {
     atomic {
         if
         ::  task.tid == INVALID_ID ->
@@ -85,6 +85,10 @@ inline task_start(task, entry, rc) {
 				fi
         fi
     }
+    if 
+    ::  tasks[callerId].preemptable -> schedSignal(callerId);
+    ::  else
+    fi
 }
 
 /*
@@ -166,7 +170,7 @@ inline task_resume(callerId, task, rc) {
         ::  task.state == Zombie ->
                 rc = RC_InvId;
         ::  task.state == TimeBlocked ->
-                task.state = Blocked;
+                task.state = TimeWait;
                 rc = RC_OK;
         ::  task.state == Blocked ->
                 task.state = Ready;
@@ -175,7 +179,10 @@ inline task_resume(callerId, task, rc) {
                 rc = RC_IncState;
         fi
     }
-    schedSignal(callerId);
+    if 
+    ::  tasks[callerId].preemptable -> schedSignal(callerId);
+    ::  else
+    fi
 }
 
 /*
@@ -245,17 +252,22 @@ inline task_setPrio(callerId, task, new, old, rc) {
         ::  old == INVALID_ID ->
                 rc = RC_InvAddr;
         ::  else ->
+                if  
+                ::  task.inheritedPrio != 0 ->
+                        old = task.inheritedPrio;
+                ::  else -> 
+                        old = task.prio;
+                fi
+
                 if
                 ::  new > MAX_PRIO ->
                         rc = RC_InvPrio;
                 ::  new == CURRENT_PRIO ->
-                        old = task.prio;
                         rc = RC_OK;
                 ::  else ->
-                        old = task.prio;
                         task.prio = new;
                         if
-                        ::  new >= old || task.HoldingMutex == false-> 
+                        ::  new <= old || task.HoldingMutex == false-> 
                                 updateSchedQ(task);
                         ::  else
                                 /*
@@ -263,12 +275,16 @@ inline task_setPrio(callerId, task, new, old, rc) {
                                 binary semaphores which use a locking protocol, 
                                 then the task’s priority cannot be lowered immediately
                                 */
+                                task.inheritedPrio = old;
                         fi
                         rc = RC_OK;
                 fi
         fi
     }
-    schedSignal(callerId);
+    if 
+    ::  tasks[callerId].preemptable -> schedSignal(callerId);
+    ::  else
+    fi
 }
 
 /*
@@ -310,18 +326,28 @@ inline task_wakeAfter(task, time, rc) {
     assert(task.pmlid == _pid);
     assert(task.state == Ready);
 
-    atomic {
-        task.state = TimeWait;
-        task.ticks = time
-    }
-
     byte id = task.tid;
-    
-    // Wait out Timer
-    do
-    ::  task.state == Ready -> break;
-    ::  else -> schedSignal(id);
-    od
+
+    if
+    ::  time == PROC_YIELD ->
+            /*  
+                Keep state of task as Ready
+                but send Task to the the end
+                of its priority group.
+            */
+            updateSchedQ(task);
+            schedSignal(id);
+    ::  else -> 
+            atomic {
+                task.state = TimeWait;
+                task.ticks = time
+            }
+            // Wait out Timer
+            do
+            ::  task.state == Ready -> break;
+            ::  else -> schedSignal(id);
+            od
+    fi
 
     rc = RC_OK;
 }

@@ -26,34 +26,21 @@ typedef Task {
   mtype state = Zombie; // {Zombie,Dormant,Ready,TimeWait,OtherWait,...}
   byte start;
   bool preemptable;
+  //bool timeslicing;
+  //bool asr;
+  //byte isrLevel;
   byte prio; // lower number is higher priority
   byte suspPrio; // Stores the tasks priority while suspended. 
   int ticks; // clock ticks to keep track of timeout
   bool tout; // true if woken by a timeout
   bool isr;     // If task is woken from Interrupt context
+  byte inheritedPrio;
   bool HoldingMutex;
   bool mutexs[SEMA_MAX]; // List of Semaphores the task is currently holding.
 };
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
 #define BAD_ID TASK_MAX   // this ID and higher are considered invalid
 
-// Signals task has finished step of execution
-chan taskSignal = [1] of {byte};
-
-// Signal task to execute
-chan sched[(TASK_MAX)] = [1] of {byte};
-
-// Clock signals new loop of system
-chan clk = [2] of {byte};
-
-// Signal for Semaphore Release
-chan sema_signal[SEMA_MAX] = [TASK_MAX] of {byte};
-
-chan sema_wait[SEMA_MAX] = [TASK_MAX] of {byte};
-
-chan sema_ready = [SEMA_MAX] of {byte};
-
-byte taskQueue[TASK_MAX];
  /*
  *  Task State Changes
  *
@@ -109,9 +96,6 @@ proctype System () {
   taskid = 1;
   liveSeen = false;
 
-  clk!1; 
-  clk?0; // Wait for Clock to Tick
-
   //printf("@@@ %d LOG Loop through tasks...\n",_pid);
 
   do   // while taskid < TASK_MAX ....
@@ -137,49 +121,12 @@ proctype System () {
 
   //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
 
-  // Semaphore Check sub-process: 
-  byte sema_id = 0;
-  byte wait_tid;
-  do
-  ::  sema_id < SEMA_MAX -> 
-        if
-        ::  sema_ready?sema_id -> 
-              do
-              ::  sema_wait[sema_id]?wait_tid ->
-                    //printf("LOG : Task %d Ready now Sema is Free.\n", wait_tid);
-                    tasks[wait_tid].state = Ready;
-                    break;
-              ::  timeout -> break;
-              od
-        ::  else
-        fi
-        sema_id=sema_id+1;
-  ::  else -> break;
-  od
-  
-  byte schedID = 0;
-  do
-  ::  tasks[taskQueue[schedID]].state == Ready ->
-        // Choose Highest Priority Task that is in the state: Ready
-        //printf("LOG : Scheduling Task %d to Run\n", taskQueue[schedID]);
-        sched[taskQueue[schedID]]!0; // Signal Task to Run.
-        taskSignal?0; // Wait for signal from running task.
-        break;
-  ::  else -> schedID = schedID+1; 
-        if
-        ::  schedID == TASK_MAX -> break;
-        ::  else
-        fi
-  od
-
   if
   ::  liveSeen -> goto loop
   ::  else
   fi
   printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
   stopclock = true;
-  clk?0;           // Wait for Clock Tick
-  clk!1;
 }
 
 /*
@@ -197,10 +144,6 @@ proctype Clock () {
   ::  stopclock  -> goto stopped
   ::  !stopclock ->
       atomic {
-
-        clk!0;
-        clk?1;
-
         printf(" (tick) \n");
         tid = 1;
         do
