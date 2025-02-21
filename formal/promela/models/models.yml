@@ -4,10 +4,6 @@ event-mgr: event-mgr/event-mgr
 msg-mgr: msg-mgr/msg-mgr
 sem-mgr: sem-mgr/sem-mgr
 task-mgr: task-mgr/task-mgr
-<<<<<<< HEAD
-=======
-proto-sem: proto-sem/proto-sem
->>>>>>> origin/main
 # freechain: freechain/freechain
 
 
