@@ -41,6 +41,9 @@ typedef Task {  // rename as Task_Common ? Common_Task
 Task tasks[TASK_MAX]; // tasks[0] models a NULL dereference
 #define BAD_ID TASK_MAX   // this ID and higher are considered invalid
 
+
+
+
  /*
  *  Task State Changes
  *
@@ -89,30 +92,31 @@ proctype System () {
   byte taskid ;
   bool liveSeen;
 
-  byte maxCount = 0; // DEBUG
-
   printf("@@@ %d LOG System running...\n",_pid);
 
   loop:
   taskid = 1;
   liveSeen = false;
 
-  //printf("@@@ %d LOG Loop through tasks...\n",_pid);
-
+  printf("@@@ %d LOG Loop through tasks...\n",_pid);
+  atomic {
+    printf("@@@ %d LOG Scenario is ",_pid);
+    printm(scenario); nl();
+  }
   do   // while taskid < TASK_MAX ....
   ::  taskid == TASK_MAX -> break;
   ::  else ->
-      //atomic {
-        //printf("@@@ %d LOG Task %d state is ",_pid,taskid);
-        //printm(tasks[taskid].state); nl()
-      //}
+      atomic {
+        printf("@@@ %d LOG Task %d state is ",_pid,taskid);
+        printm(tasks[taskid].state); nl()
+      }
       if
       :: tasks[taskid].state == Zombie -> taskid++
       :: else ->
          if
          ::  tasks[taskid].state == OtherWait
              -> tasks[taskid].state = Ready
-                //printf("@@@ %d STATE %d Ready\n",_pid,taskid)
+                printf("@@@ %d STATE %d Ready\n",_pid,taskid)
          ::  else -> skip
          fi
          liveSeen = true;
@@ -120,7 +124,7 @@ proctype System () {
       fi
   od
 
-  //printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
+  printf("@@@ %d LOG ...all visited, live:%d\n",_pid,liveSeen);
 
   if
   ::  liveSeen -> goto loop
@@ -144,36 +148,28 @@ proctype Clock () {
   do
   ::  stopclock  -> goto stopped
   ::  !stopclock ->
-      atomic {
-        printf(" (tick) \n");
-        tid = 1;
-        do
-        ::  tid == TASK_MAX -> break
-        ::  else ->
-            //atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
-
+      printf(" (tick) \n");
+      tid = 1;
+      do
+      ::  tid == TASK_MAX -> break
+      ::  else ->
+          atomic{printf("Clock: tid=%d, state=",tid); printm(tasks[tid].state); nl()};
+          if
+          ::  tasks[tid].state == TimeWait ->
+              tix = tasks[tid].ticks - 1;
+              // printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
               if
-              ::  tasks[tid].state == TimeWait || tasks[tid].state == TimeBlocked ->
-                  tix = tasks[tid].ticks - 1;
-                  //printf("Clock: ticks=%d, tix=%d\n",tasks[tid].ticks,tix);
-                  if
-                  ::  tix <= 0
-                      tasks[tid].tout = true
-                      if 
-                      ::  tasks[tid].state == TimeWait ->
-                            tasks[tid].state = Ready;
-                      ::  tasks[tid].state == TimeBlocked ->
-                            tasks[tid].state = Blocked;
-                      fi
-                      //printf("@@@ %d STATE %d Ready\n",_pid,tid)
-                  ::  else
-                      tasks[tid].ticks = tix
-                  fi
-              ::  else // state != TimeWait
+              ::  tix == 0
+                  tasks[tid].tout = true
+                  tasks[tid].state = Ready
+                  printf("@@@ %d STATE %d Ready\n",_pid,tid)
+              ::  else
+                  tasks[tid].ticks = tix
               fi
-            tid = tid + 1
-        od
-      }
+          ::  else // state != TimeWait
+          fi
+          tid = tid + 1
+      od
   od
 stopped:
   printf("@@@ %d LOG Clock Stopped\n",_pid);
