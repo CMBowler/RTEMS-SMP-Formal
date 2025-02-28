@@ -1,3 +1,5 @@
+#define TIMESLICE_MAX  2
+
 // Signals task has finished step of execution
 chan taskSignal = [1] of {byte};
 
@@ -34,6 +36,8 @@ proctype Scheduler () {
     taskid = 1;
     schedID = 0;
     liveSeen = false;
+    prevRanTask = 0;
+    TimeSliceCounter = 0;
 
     //printf("@@@ %d LOG Loop through tasks...\n",_pid);
 
@@ -59,8 +63,29 @@ proctype Scheduler () {
     
     do
     ::  tasks[taskQueue[schedID]].state == Ready ->
-            // Choose Highest Priority Task that is in the state: Ready
+            /* Choose Highest Priority Task that is in the state: Ready */
             //printf("LOG : Scheduling Task %d to Run\n", taskQueue[schedID]);
+
+						/* Time Slicing */
+						if
+						::	taskQueue[schedID] == prevRanTask ->
+									TimeSliceCounter = TimeSliceCounter + 1;
+									if
+									::	TimeSliceCounter == TIMESLICE_MAX ->
+												/* 	
+													- Reset Timeslice Timer.
+													- Put Task at the back
+														of its priority group.
+												*/
+												TimeSliceCounter = 0;
+												updateSchedQ(taskQueue[schedID]);
+									::	else
+									fi
+						::	else ->
+									TimeSliceCounter = 0;
+									prevRanTask = taskQueue[schedID];
+						fi
+
             sched[taskQueue[schedID]]!0; // Signal Task to Run.
             taskSignal?0; // Wait for signal from running task.
             break;
