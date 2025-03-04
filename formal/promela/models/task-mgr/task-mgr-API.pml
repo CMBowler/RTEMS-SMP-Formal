@@ -19,27 +19,27 @@
  *     `tid` models `rtems_id           *id`
  *
  */
-inline task_create(task, id, name, prio, preempt, tidRC, rc) {
-    atomic {
-        if
-		::	name == 0 ->
-				rc = RC_InvName;
-        ::  prio == 0 ->
-                rc = RC_InvPrio;
-        ::  prio >= BAD_PRIO ->
-                rc = RC_InvPrio;
-		::  tidRC == false ->
-                rc = RC_TooMany;
-		::	id == 0 ->
-				rc = RC_InvAddr;
-        ::  else ->
-                task.tid = id;
-				task.prio = prio;
-				task.preemptable = preempt;
-				task.state = Dormant;
-                insertSchedQ(task);
-        fi
-    }
+inline task_create(schedId, task, id, name, prio, preempt, tidRC, rc) {
+  atomic {
+    if
+	  ::	name == 0 ->
+		      rc = RC_InvName;
+    ::  prio == 0 ->
+          rc = RC_InvPrio;
+    ::  prio >= BAD_PRIO ->
+          rc = RC_InvPrio;
+	  ::  tidRC == false ->
+          rc = RC_TooMany;
+	  ::	id == 0 ->
+	      rc = RC_InvAddr;
+    ::  else ->
+        task.tid = id;
+		    task.prio = prio;
+		    task.preemptable = preempt;
+		    task.state = Dormant;
+        insertSchedQ(task, schedId);
+    fi
+  }
 }
 
 /*
@@ -62,33 +62,34 @@ inline task_create(task, id, name, prio, preempt, tidRC, rc) {
  *                  is not utilised in the model. 
  *
  */
-inline task_start(callerId, task, entry, rc) {
-    atomic {
-        if
-        ::  task.tid == INVALID_ID ->
-                //printf("@@@ %d LOG Start NULL out.\n",_pid);
-                rc = RC_InvId;
+inline task_start(callerId, schedId, task, entry, rc) {
+  atomic {
+    if
+    ::  task.tid == INVALID_ID ->
+	        //printf("@@@ %d LOG Start NULL out.\n",_pid);
+          rc = RC_InvId;
 		:: 	else ->
-				if
-				::  task.state != Dormant ->
-						rc = RC_IncState;
-				:: 	else ->
-						if 
-						::  entry == 0 -> rc = RC_InvAddr;
-						::  else ->
-							task.state = Ready;
-							task.start = entry;
-							// Start Task Model
-							//TestSyncRelease(entry);
-							rc = RC_OK;
-						fi
-				fi
-        fi
-    }
-    if 
-    ::  tasks[callerId].preemptable -> schedSignal(callerId);
-    ::  else
+					if
+					::  task.state != Dormant ->
+							  rc = RC_IncState;
+				  :: 	else ->
+					  	if 
+						  ::  entry == 0 -> rc = RC_InvAddr;
+						  ::  else ->
+							      task.state = Ready;
+							      task.start = entry;
+							      // Start Task Model
+							      //TestSyncRelease(entry);
+							      rc = RC_OK;
+						  fi
+				  fi
     fi
+  }
+
+  if 
+  ::  tasks[callerId].preemptable -> schedSync(callerId, schedId);
+  ::  else
+  fi
 }
 
 /*
@@ -105,22 +106,21 @@ inline task_start(callerId, task, entry, rc) {
  *     `tid` models `rtems_id id`
  *
  */
-inline task_suspend(callerId, task, rc) {
-    atomic {
-        if
-        ::  task.state == Zombie ->
-                rc = RC_InvId;
-        ::  task.state == Blocked || task.state == TimeBlocked ->
-                rc = RC_AlrSuspd;
-        ::  task.state == TimeWait ->
-                task.state = TimeBlocked;
-                rc = RC_OK;
-        ::  else ->
-                task.state = Blocked;
-                rc = RC_OK;
-        fi
-    }
-    schedSignal(callerId);
+inline task_suspend(callerId, schedId, task, rc) {
+  atomic {
+    if
+    ::  task.state == Zombie ->
+  	      rc = RC_InvId;
+  	::  task.state == Blocked && task.SuspBlock ->
+          rc = RC_AlrSuspd;
+    ::  else ->
+          task.state = Blocked;
+          task.SuspBlock = true;
+          rc = RC_OK;
+    fi
+	}
+
+  schedSync(callerId, schedId);
 }
 
 /*
@@ -138,16 +138,16 @@ inline task_suspend(callerId, task, rc) {
  *
  */
 inline task_isSuspend(task, rc) {
-    atomic {
-        if
-        ::  task.state == Zombie ->
-                rc = RC_InvId;
-        ::  task.state == Blocked || task.state == TimeBlocked ->
-                rc = RC_AlrSuspd;
-        ::  else ->
-                rc = RC_OK;
-        fi
-    }
+  atomic {
+    if
+    ::  task.state == Zombie ->
+          rc = RC_InvId;
+    ::  task.state == Blocked && task.SuspBlock == true->
+          rc = RC_AlrSuspd;
+    ::  else ->
+          rc = RC_OK;
+    fi
+  }
 }
 
 /*
@@ -164,25 +164,29 @@ inline task_isSuspend(task, rc) {
  *     `tid` models `rtems_id id`
  *
  */
-inline task_resume(callerId, task, rc) {
-    atomic {
-        if
-        ::  task.state == Zombie ->
-                rc = RC_InvId;
-        ::  task.state == TimeBlocked ->
-                task.state = TimeWait;
-                rc = RC_OK;
-        ::  task.state == Blocked ->
+inline task_resume(callerId, schedId, task, rc) {
+  atomic {
+    if
+    ::  task.state == Zombie ->
+          rc = RC_InvId;
+    ::  task.state == Blocked && task.SuspBlock ->
+          task.SuspBlock = false;
+          if
+          ::  task.TimeBlock == false && 
+              task.SemaBlock == false -> 
                 task.state = Ready;
-                rc = RC_OK;
-        ::  else -> // Task State == Ready/Dormant
-                rc = RC_IncState;
-        fi
-    }
-    if 
-    ::  tasks[callerId].preemptable -> schedSignal(callerId);
-    ::  else
+          ::  else
+          fi
+          rc = RC_OK;
+    ::  else -> // Task State == Ready/Dormant
+          rc = RC_IncState;
     fi
+  }
+
+  if 
+  ::  tasks[callerId].preemptable -> schedSync(callerId, schedId);
+  ::  else
+  fi
 }
 
 /*
@@ -199,30 +203,41 @@ inline task_resume(callerId, task, rc) {
  *     `tid` models `rtems_id id`
  *
  */
-inline task_delete(task, tid, rc) {
-    atomic {
-        if
-        ::  task.state == Zombie ->
-                rc = RC_InvId;
-        ::  else ->
+inline task_delete(task, rc) {
+  atomic {
+    if
+    ::  task.state == Zombie ->
+          rc = RC_InvId;
+    ::  else ->
+          if
+          ::  task.isr == true ->
+                rc = RC_FrmIsr;
+          ::  else ->
+                bool isremoved;
+                removeTask(task.tid, isremoved);
                 if
-                ::  task.isr == true ->
-                        rc = RC_FrmIsr;
+                ::  isremoved == false ->
+                      rc = RC_InvId;
                 ::  else ->
-                        bool isremoved;
-                        removeTask(tid, isremoved);
-                        if
-                        ::  isremoved == false ->
-                                rc = RC_InvId;
-                        ::  else ->
-                                task.state = Zombie;
-                                task.start = 0;
-                                removeSchedQ(task);
-                                rc = RC_OK;
-                        fi
+                      // Reset elements of TCB
+                      task.state = Zombie;
+                      task.start = 0;
+                      // Remove from all Scheduler Task Queues
+                      byte sID = 0;
+                      do
+                      ::  sID == NUM_PROC  -> break;
+                      ::  else -> 
+                            removeSchedQ(task, sID);
+                            sID++;
+                      od
+                      // Signal Task to flush any remaining states.
+                      schedSignal[task.tid]!0;
+                      task.tid = 0;
+                      rc = RC_OK;
                 fi
-        fi
-    }
+          fi
+    fi
+  }
 }
 
 /*
@@ -244,47 +259,48 @@ inline task_delete(task, tid, rc) {
  *      `old` models `rtems_task_priority old_priority`
  *
  */
-inline task_setPrio(callerId, task, new, old, rc) {
-    atomic {
-        if
-        ::  task.state == Zombie ->
-                rc = RC_InvId;
-        ::  old == INVALID_ID ->
-                rc = RC_InvAddr;
-        ::  else ->
-                if  
-                ::  task.inheritedPrio != 0 ->
-                        old = task.inheritedPrio;
-                ::  else -> 
-                        old = task.prio;
-                fi
-
+inline task_setPrio(callerId, schedId, task, new, old, rc) {
+  atomic {
+    if
+    ::  task.state == Zombie ->
+          rc = RC_InvId;
+    ::  old == INVALID_ID ->
+          rc = RC_InvAddr;
+    ::  else ->
+          if  
+          ::  task.inheritedPrio != 0 ->
+                old = task.inheritedPrio;
+          ::  else -> 
+                old = task.prio;
+          fi
+					
+					if
+          ::  new > MAX_PRIO ->
+                rc = RC_InvPrio;
+          ::  new == CURRENT_PRIO ->
+                rc = RC_OK;
+          ::  else ->
+                task.prio = new;
                 if
-                ::  new > MAX_PRIO ->
-                        rc = RC_InvPrio;
-                ::  new == CURRENT_PRIO ->
-                        rc = RC_OK;
-                ::  else ->
-                        task.prio = new;
-                        if
-                        ::  new <= old || task.HoldingMutex == false-> 
-                                updateSchedQ(task);
-                        ::  else
-                                /*
-                                If the task is currently holding any 
-                                binary semaphores which use a locking protocol, 
-                                then the task’s priority cannot be lowered immediately
-                                */
-                                task.inheritedPrio = old;
-                        fi
-                        rc = RC_OK;
+                ::  new <= old || task.HoldingMutex == false-> 
+                      updateSchedQ(task, schedId);
+                ::  else
+											/*
+											If the task is currently holding any 
+											binary semaphores which use a locking protocol, 
+											then the task’s priority cannot be lowered immediately
+											*/
+											task.inheritedPrio = old;
                 fi
-        fi
-    }
-    if 
-    ::  tasks[callerId].preemptable -> schedSignal(callerId);
-    ::  else
+                rc = RC_OK;
+          fi
     fi
+  }
+
+  if 
+  ::  tasks[callerId].preemptable -> schedSync(callerId, schedId);
+  ::  else
+  fi
 }
 
 /*
@@ -317,37 +333,34 @@ inline task_getPrio(task, sched, prio, rc) {
  *      `ticks` models `rtems_interval ticks`
  *
  */
-inline task_wakeAfter(task, time, rc) {
+inline task_wakeAfter(schedId, task, time, rc) {
 
-    // API can only be used in 
-    // a self-referential way:
-    // A task cannot sleep another task
-    // Using this API
-    assert(task.pmlid == _pid);
-    assert(task.state == Ready);
+	// API can only be used in 
+	// a self-referential way:
+	// A task cannot sleep another task
+	// Using this API
+	assert(task.pmlid == _pid);
 
-    byte id = task.tid;
+	byte id = task.tid;
 
-    if
-    ::  time == PROC_YIELD ->
-            /*  
-                Keep state of task as Ready
-                but send Task to the the end
-                of its priority group.
-            */
-            updateSchedQ(task);
-            schedSignal(id);
-    ::  else -> 
-            atomic {
-                task.state = TimeWait;
-                task.ticks = time
-            }
-            // Wait out Timer
-            do
-            ::  task.state == Ready -> break;
-            ::  else -> schedSignal(id);
-            od
-    fi
+	if
+	::  time == PROC_YIELD ->
+				/*  
+						Keep state of task as Ready
+						but send Task to the the end
+						of its priority group.
+				*/
+				updateSchedQ(task, schedId);
+				schedSync(id, schedId);
+	::  else -> 
+				atomic {
+						task.state = Blocked;
+            task.TimeBlock = true;
+						task.ticks = time
+				}
+				// Wait out Blocked State
+				schedSync(id, schedId);
+	fi
 
-    rc = RC_OK;
+	rc = RC_OK;
 }

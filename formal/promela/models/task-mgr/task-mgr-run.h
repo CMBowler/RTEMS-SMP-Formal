@@ -28,11 +28,12 @@ static void Worker{0}_0( rtems_task_argument arg )
 
 static void Worker{0}_1( rtems_task_argument arg )
 {{
-  Context *ctx;
   rtems_event_set events;
 
-  ctx = (Context *) arg;
 #ifdef TASK_1
+    Context *ctx;
+    ctx = (Context *) arg;
+
     T_log( T_NORMAL, "Worker 1 Running" );
     TestSegment4( ctx );
     T_log( T_NORMAL, "Worker 1 finished" );
@@ -51,11 +52,12 @@ static void Worker{0}_1( rtems_task_argument arg )
 
 static void Worker{0}_2( rtems_task_argument arg )
 {{
-  Context *ctx;
   rtems_event_set events;
-
-  ctx = (Context *) arg;
+  
 #ifdef TASK_2
+    Context *ctx;
+    ctx = (Context *) arg;
+
     T_log( T_NORMAL, "Worker 2 Running" );
     TestSegment5( ctx );
     T_log( T_NORMAL, "Worker 2 finished" );

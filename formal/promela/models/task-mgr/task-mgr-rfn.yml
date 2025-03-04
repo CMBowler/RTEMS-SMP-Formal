@@ -75,6 +75,8 @@ INIT: |
   initialise_semaphore( 4, ctx->worker0_flag, semaphore );
   initialise_semaphore( 5, ctx->worker1_flag, semaphore );
 
+  T_log( T_NORMAL, "Max Active Tasks: %d\n", rtems_configuration_get_maximum_tasks());
+
 TASK_INIT: |
   T_log( T_NORMAL, "Starting Task %d", {0});
 
@@ -91,10 +93,10 @@ WAIT: |
   Wait( semaphore[{}] );
 
 task_create: |
-  T_log( T_NORMAL, "Creating Task(%d, %d, RTEMS_MINIMUM_STACK_SIZE, %d, %d, %d)", {0}, {1}, {2}, {3}, {4});
-  {5} = ( *ctx->t_create )( mapName( {0} ), {1}, RTEMS_MINIMUM_STACK_SIZE, construct_mode({2}, 1, 1, 0), 
-                            {3}, {4} ? &taskID[{4}] : NULL);
-  T_log( T_NORMAL, "Returned 0x%x from Create", {5} );
+  T_log( T_NORMAL, "Creating Task(%d, %d, %d, %d, %d, %d)", {0}, {1}, {2}, {3}, {4}, {5});
+  {6} = ( *ctx->t_create )( mapName( {0} ), {1}, stack_size({2}), construct_mode({3}, 1, 1, 0), 
+                            {4}, {5} ? &taskID[{5}] : NULL);
+  T_log( T_NORMAL, "Returned 0x%x from Create", {6} );
 
 task_start: |
   T_log( T_NORMAL, "Starting Task(%d)", {0});

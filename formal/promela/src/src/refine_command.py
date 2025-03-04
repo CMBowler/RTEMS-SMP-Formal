@@ -365,6 +365,8 @@ class command:
                                                ,rest[2],rest[3],rest[4])).rsplit('\n')
                         case 6: callcode = (code.format(rest[0],rest[1]
                                                ,rest[2],rest[3],rest[4],rest[5])).rsplit('\n')
+                        case 7: callcode = (code.format(rest[0],rest[1]
+                                               ,rest[2],rest[3],rest[4],rest[5], rest[6])).rsplit('\n')
                         case _: callcode = [self.EOLC+" CALL: can't handle > 6 arguments"]
                     self.addCode(pid,callcode)
                 logger.debug("CALL complete")

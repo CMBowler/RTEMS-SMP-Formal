@@ -48,3 +48,9 @@
 #include <rtems/score/threadimpl.h>
 
 #include "tr-task-mgr-model.h"
+
+#ifdef RTEMS_SMP
+#warning "SMP support is enabled"
+#else
+#warning "SMP support is disabled"
+#endif

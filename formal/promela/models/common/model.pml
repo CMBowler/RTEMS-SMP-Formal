@@ -24,9 +24,13 @@ typedef Task {  // rename as Task_Common ? Common_Task
   byte pmlid; // Promela process id
   byte tid; // Task ID
   mtype state = Zombie; // {Zombie,Dormant,Ready,TimeWait,OtherWait,...}
+  // Block Types (additive states):
+  bool TimeBlock = false;
+  bool SemaBlock = false;
+  bool SuspBlock = false;
   byte start;
   bool preemptable;
-  //bool timeslicing;
+  bool timeslicing;
   //bool asr;
   //byte isrLevel;
   byte prio; // lower number is higher priority

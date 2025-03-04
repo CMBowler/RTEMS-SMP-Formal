@@ -92,7 +92,7 @@ mtype = {
  *   We haven't used Dormant yet but will need it for the Task Manager model
  */
 mtype = {
-  Zombie, Dormant, Ready, Blocked, TimeWait, OtherWait, TimeBlocked
+  Zombie, Dormant, Ready, Blocked, TimeWait, OtherWait
 }
 /*
  * Transitions  (from-state(s) --Transition--> to-state ):

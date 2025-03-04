@@ -104,6 +104,10 @@ rtems_mode construct_mode(bool preempt, bool ts, bool asr, int ISR) {
   new_mode |= RTEMS_INTERRUPT_LEVEL(ISR);
   return new_mode;
 }
+
+size_t stack_size(int t_size) {
+    return (t_size * TEST_MINIMUM_STACK_SIZE);
+}
 /*
 rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)
 {

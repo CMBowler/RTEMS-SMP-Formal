@@ -1,4 +1,4 @@
-#define NUM_PROC 5
+#define NUM_PROC 1
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
@@ -6,7 +6,7 @@
 #define SEMA_TASK_START_1  	(2)
 #define SEMA_LOCK           (3)
 #define SEMA_TASK0_FIN      (4)
-#define SEMA_TASK1_FIN   	(5)
+#define SEMA_TASK1_FIN   	  (5)
 
 /*
  * We need to output annotations for any #define we use.
@@ -35,9 +35,26 @@ byte task_control = CLEAR_TASKS;
 
 byte globalCounter = 0;
 
-chan interrupt_channel = [1] of { byte, byte };
+// Semaphore Queue & List of Queues
 
-//byte priority_map[SCHED_MAX][TASK_MAX];
+typedef semaQueue {
+  byte id;
+  bool free = true;
+  byte Queue[TASK_MAX];
+}
+
+semaQueue semaList[SEMA_MAX];
+
+// SMP
+
+byte taskQueue[TASK_MAX];
+
+typedef TaskPriorityQueue {
+  byte sID;
+  byte taskQueue[TASK_MAX];
+}
+
+TaskPriorityQueue schedList[NUM_PROC];
 
 inline outputDefines () {
 
@@ -50,11 +67,11 @@ inline outputDefines () {
     printf("@@@ %d DEF MED_PRIO %d\n",_pid,MED_PRIO);
     printf("@@@ %d DEF HIGH_PRIO %d\n",_pid,LOW_PRIO);
 	
-	printf("@@@ %d DEF RC_OK RTEMS_SUCCESSFUL\n",_pid);
-	printf("@@@ %d DEF RC_InvId RTEMS_INVALID_ID\n",_pid);
-	printf("@@@ %d DEF RC_InvAddr RTEMS_INVALID_ADDRESS\n",_pid);
-	printf("@@@ %d DEF RC_Unsat RTEMS_UNSATISFIED\n",_pid);
-	printf("@@@ %d DEF RC_Timeout RTEMS_TIMEOUT\n",_pid);
+    printf("@@@ %d DEF RC_OK RTEMS_SUCCESSFUL\n",_pid);
+    printf("@@@ %d DEF RC_InvId RTEMS_INVALID_ID\n",_pid);
+    printf("@@@ %d DEF RC_InvAddr RTEMS_INVALID_ADDRESS\n",_pid);
+    printf("@@@ %d DEF RC_Unsat RTEMS_UNSATISFIED\n",_pid);
+    printf("@@@ %d DEF RC_Timeout RTEMS_TIMEOUT\n",_pid);
 }
 
 inline outputDeclarations () {
@@ -126,8 +143,8 @@ inline setTask(tid, rc) {
     }
 }
 
-inline removeTask(tid, rc) {
-    byte raw_tid = 1 << tid;
+inline removeTask(taskID, rc) {
+    byte raw_tid = 1 << taskID;
     //TestSyncObtain(SEMA_TASKCONTROL);
     if
     ::  (task_control & raw_tid) != raw_tid ->
@@ -139,6 +156,40 @@ inline removeTask(tid, rc) {
     //TestSyncRelease(SEMA_TASKCONTROL);
 }
 
+inline insertQueue(obj, size, tid) {
+  /*
+    Insert a value into 
+    a Queue.
+  */
+  byte index = 0;
+  do
+  ::  index == size -> 
+    	  printf("Debug : Queue is Full!\n"); break;
+  ::  else -> 
+        if
+        ::  obj.Queue[index] == 0 ->
+              obj.Queue[index] = tid;
+              break;
+        :: else -> index++
+        fi
+  od
+}
+
+inline popQueue(obj, size, tid) {
+  tid = obj.Queue[0];
+  /* 
+    Move all entries in the
+    queue up one position.
+  */
+  byte index = 0;
+  do
+  ::  index == (size-1) -> break;
+  ::  else ->
+        obj.Queue[index] = obj.Queue[index+1];
+        index++
+  od
+}
+
 inline isHoldingMutex(tid, holding, rc) {
     /*
     If a given task is holding any bin semaphores
@@ -148,28 +199,26 @@ inline isHoldingMutex(tid, holding, rc) {
     atomic {
         holding = false;
         if
-        ::  tid >= TASK_MAX ->
-                rc = false;
-        ::  tid == 0 ->
+        ::  tid >= TASK_MAX || tid == 0 ->
                 rc = false;
         ::  else ->
                 byte mutID = 0;
                 do
                 ::  mutID < SEMA_MAX ->
-                        if
-                        ::  tasks[tid].mutexs[mutID] == 1 ->
-                                holding = true;
-                        ::  else
-                        fi
-                else -> break;
+                      if
+                      ::  tasks[tid].mutexs[mutID] == 1 ->
+                            holding = true;
+                      ::  else -> mutID++
+                      fi
+                ::  else -> break;
                 od
         fi
     }
 }
 
-inline schedSignal(tid) {
-    taskSignal!0;
-    sched[tid]?0;
+inline schedSync(tid, schedId) {
+    taskSignal[schedId]!0;
+    schedSignal[tid]?schedId;
 }
 
 inline UpdateCount() {
@@ -179,110 +228,143 @@ inline UpdateCount() {
     }
 }
 
-inline ObtainSema(tid, sid) {
-    
-    do
-    ::  test_sync_sema[sid] == false ->
-            sema_wait[sid]!tid;
-            tasks[tid].state = Blocked;
-            schedSignal(tid);
-    ::  else -> break;
-    od   
-    TestSyncObtain(sid);
+inline ObtainSema(callerId, schedId, sid) {
+  atomic {
+    printf("@@@ %d WAIT %d\n",_pid,sid);
+    if
+    ::  semaList[sid].free ->
+          semaList[sid].free = false;
+    ::  else ->
+            insertQueue(
+              semaList[sid],
+              TASK_MAX,
+              callerId
+            )
+            tasks[callerId].state = Blocked;
+            tasks[callerId].SemaBlock = true;
+          schedSync(callerId, schedId);
+    fi
+    printf("@@@ %d LOG WAIT %d Over\n",_pid,sid);
+  }
 }
 
-inline ReleaseSema(tid, sid) {
-    TestSyncRelease(sid);
-    sema_ready!sid;
+inline ReleaseSema(callerId, schedId, sid) {
+  atomic {
+    printf("@@@ %d SIGNAL %d\n",_pid,sid);
+    semaList[sid].free = true;
+  }
+  schedSync(callerId, schedId);
 }
 
-inline ObtainMutex(tid, sid) {
-    ObtainSema(tid, sid)
+inline ObtainMutex(tid, schedId, sid) {
+  atomic {
+    ObtainSema(tid, schedId, sid)
     tasks[tid].mutexs[sid] = 1;
     tasks[tid].HoldingMutex = true;
+  }
 }
 
-inline ReleaseMutex(tid, sid) { 
-    bool rc; // TODO 
-    atomic {
-        if
-        ::  tasks[tid].mutexs[sid] == 1 ->
-                ReleaseSema(tid, sid)
-                isHoldingMutex(tid, tasks[tid].HoldingMutex, rc);
-                // If no Longer Holding a Mutex -> Allow Prio to Lower
-                if
-                ::  tasks[tid].HoldingMutex == false && 
-                    tasks[tid].inheritedPrio != 0 -> 
-                        updateSchedQ(tasks[tid]);
-                        tasks[tid].inheritedPrio = 0;
-                :: else 
-                fi
-        ::  else -> rc = false
+inline ReleaseMutex(callerId, schedId, sid) { 
+  bool rc; // TODO 
+  atomic {
+    if
+    ::  tasks[callerId].mutexs[sid] == 1 ->
+          tasks[callerId].mutexs[sid] = 0;
+          isHoldingMutex(callerId, tasks[callerId].HoldingMutex, rc);
+          // If no Longer Holding a Mutex -> Allow Prio to Lower
+          if
+          ::  tasks[callerId].HoldingMutex == false && 
+              tasks[callerId].inheritedPrio != 0 -> 
+                  if
+                  ::  tasks[callerId].preemptable ->
+                        updateSchedQ(tasks[callerId], schedId);
+                  ::  else
+                  fi
+                  tasks[callerId].inheritedPrio = 0;
+          :: else
+          fi
+          ReleaseSema(callerId, schedId, sid);
+    ::  else -> rc = false
+    fi
+  }
+}
+
+inline insertSchedQ(newTask, sid) {
+  byte i=0;
+  byte insertIndex;
+
+  do
+  ::  schedList[sid].taskQueue[i] == 0 || 
+      tasks[schedList[sid].taskQueue[i]].prio > newTask.prio ->
+        insertIndex = i;
+        i = TASK_MAX-2;           
+        do
+        ::  i == insertIndex -> break;
+        ::  else ->
+              schedList[sid].taskQueue[i] = schedList[sid].taskQueue[i-1];
+              i--;
+        od
+        schedList[sid].taskQueue[i] = newTask.tid;
+        break;
+  ::  else -> 
+        i++; 
+        if 
+        ::  i == TASK_MAX -> break;
+        ::  else -> skip;
         fi
-    }
+  od
+
+  /* Debug : print schedQ
+  i = 0;
+  printf(" LOG : Updated Task Queue %d: ", schid);
+  do
+  ::  i == TASK_MAX -> break;
+  ::  else ->     
+        printf("%d ", schedList[schid].taskQueue[i]);
+        i=i+1;
+  od
+  nl();
+  //*/
 }
 
-inline insertSchedQ(newTask) {
-    byte i=0;
-    byte insertIndex;
-    do
-    ::  taskQueue[i] == 0 || tasks[taskQueue[i]].prio > newTask.prio ->
-            insertIndex = i;
-            i = TASK_MAX-2;           
-            do
-            ::  i == insertIndex -> break;
-            ::  else ->
-                    taskQueue[i] = taskQueue[i-1];
-                    i=i-1;
-            od
-            taskQueue[i] = newTask.tid;
-            break;
-    ::  else -> i = i+1; 
-            if 
-            ::  i == TASK_MAX -> break;
-            ::  else -> skip;
-            fi
-    od
+inline removeSchedQ(task, sid) {
+  byte i=0;
+  // Remove task from relevant Scheduler Queue
+  do
+  ::  schedList[sid].taskQueue[i] == task.tid ->
+        do
+        ::  i == TASK_MAX-2 -> break;
+        ::  else ->
+              schedList[sid].taskQueue[i] = schedList[sid].taskQueue[i+1];
+              i++;
+        od
+  ::  else -> 
+        i++;
+        if 
+        ::  i == TASK_MAX -> break;
+        ::  else
+        fi
+  od
 
-    ///* Debug : print schedQ
-    i = 0;
-    printf(" LOG : Updated Task Queue: ")
-    do
-    ::  i == TASK_MAX -> break;
-    ::  else ->     
-            printf("%d ", taskQueue[i]);
-            i=i+1;
-    od
-    nl();
-    //*/
+  /* Debug : print schedQ
+  i = 0;
+  printf(" LOG : Updated Task Queue %d: ", sid);
+  do
+  ::  i == TASK_MAX -> break;
+  ::  else ->     
+        printf("%d ", schedList[sid].taskQueue[i]);
+        i=i+1;
+  od
+  nl();
+  //*/
 }
 
-inline removeSchedQ(task) {
-    byte index=0;
-    // Remove task from Scheduler Queue
-    do
-    ::  taskQueue[index] == task.tid ->
-            do
-            ::  index == TASK_MAX-2 -> break;
-            ::  else ->
-                    taskQueue[index] = taskQueue[index+1];
-                    index = index+1;
-            od
-    ::  else -> 
-            index = index+1;
-            if 
-            ::  index == TASK_MAX -> break;
-            ::  else
-            fi
-    od
+inline updateSchedQ(task, schedId) {
+  removeSchedQ(task, schedId);
+  insertSchedQ(task, schedId);
 }
 
-inline updateSchedQ(task) {
-    removeSchedQ(task);
-    insertSchedQ(task);
-}
-
-inline SuspendResume(myId, tid) {
+inline SuspendResume(myId, schedId, tid) {
     bool repeated = false;
 
     if
@@ -301,7 +383,7 @@ suspRepeat:
     // Suspend
     printf("@@@ %d CALL task_suspend %d suspendRC\n",
                 _pid, suspendId, suspendRC);
-    task_suspend(myId, tasks[suspendId], suspendRC);
+    task_suspend(myId, schedId, tasks[suspendId], suspendRC);
     printf("@@@ %d SCALAR suspendRC %d\n",_pid,suspendRC);
 
     // Scenario: Already Suspended
@@ -317,7 +399,7 @@ suspRepeat:
     //Resume
     printf("@@@ %d CALL task_resume %d resumeRC\n", 
                 _pid, resumeId, resumeRC);
-    task_resume(myId, tasks[resumeId], resumeRC);
+    task_resume(myId, schedId, tasks[resumeId], resumeRC);
     printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC);
 
     if 
@@ -325,27 +407,27 @@ suspRepeat:
             // Resume Process properly so It can terminate
             printf("@@@ %d CALL task_resume %d resumeRC\n", 
                         _pid, tid, resumeRC);
-            task_resume(myId, tasks[tid], resumeRC);
+            task_resume(myId, schedId, tasks[tid], resumeRC);
             printf("@@@ %d SCALAR resumeRC %d\n",_pid,resumeRC)
     ::  else
     fi
 }
 
-inline changePriority (callerId, taskid, prio, oldPrio, rc) {
+inline changePriority (callerId, schedId, taskid, prio, oldPrio, rc) {
     // Change the Priority of the given task
     // If prio = 0 -> returns current Priority with no update.
     printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
                             _pid, taskid, prio, old_prio, rc);
-    task_setPrio(callerId, tasks[taskid], prio, old_prio, rc);
+    task_setPrio(callerId, schedId, tasks[taskid], prio, old_prio, rc);
     printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
 }
 
-inline changeCheckPriority (callerId, taskid, prio, oldPrio, rc) {
+inline changeCheckPriority (callerId, schedId, taskid, prio, oldPrio, rc) {
     // Change the Priority of the given task
     // If prio = 0 -> returns current Priority with no update.
     printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
                             _pid, taskid, prio, old_prio, rc);
-    task_setPrio(callerId, tasks[taskid], prio, old_prio, rc);
+    task_setPrio(callerId, schedId, tasks[taskid], prio, old_prio, rc);
     printf("@@@ %d CALL oldPrio %d\n",_pid, old_prio);
     printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
 }
