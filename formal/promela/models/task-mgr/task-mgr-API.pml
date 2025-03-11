@@ -38,6 +38,7 @@ inline task_create(schedId, task, id, name, prio, preempt, tidRC, rc) {
 		    task.preemptable = preempt;
 		    task.state = Dormant;
         insertSchedQ(task, schedId);
+        task.homeSched = schedId;
     fi
   }
 }
@@ -69,20 +70,30 @@ inline task_start(callerId, schedId, task, entry, rc) {
 	        //printf("@@@ %d LOG Start NULL out.\n",_pid);
           rc = RC_InvId;
 		:: 	else ->
-					if
-					::  task.state != Dormant ->
-							  rc = RC_IncState;
-				  :: 	else ->
-					  	if 
-						  ::  entry == 0 -> rc = RC_InvAddr;
-						  ::  else ->
-							      task.state = Ready;
-							      task.start = entry;
-							      // Start Task Model
-							      //TestSyncRelease(entry);
-							      rc = RC_OK;
-						  fi
-				  fi
+          if 
+          ::  entry == 0 -> 
+                rc = RC_InvAddr;
+          ::  else ->
+                if
+                ::  task.state == Dormant ->
+                      task.state = Ready;
+                      task.start = entry;
+                      rc = RC_OK;
+                ::  task.state == Blocked -> 
+                      /*
+                        In the case a task has been suspended 
+                        before it is started, the state cannot
+                        be set to ready, as this over-writes 
+                        the blocked state, instead we can set
+                        the tasks 'preBlockState' to ready.
+                      */
+                      task.preBlockState = Ready;
+                      task.start = entry;
+                      rc = RC_OK;
+                :: 	else ->
+                      rc = RC_IncState;
+                fi
+          fi
     fi
   }
 
@@ -114,8 +125,20 @@ inline task_suspend(callerId, schedId, task, rc) {
   	::  task.state == Blocked && task.SuspBlock ->
           rc = RC_AlrSuspd;
     ::  else ->
-          task.state = Blocked;
-          task.SuspBlock = true;
+          // Store preblocked state if required
+          // and add SuspBlock state
+          if
+          ::  task.state != Blocked -> // Executing/Ready/Dormant
+                if
+                ::  task.state == Executing -> // Self suspend
+                      task.preBlockState = Ready;
+                ::  else ->
+                      task.preBlockState = task.state;
+                fi
+                task.state = Blocked;
+          ::  else
+          fi
+          task.SuspBlock = true; 
           rc = RC_OK;
     fi
 	}
@@ -174,7 +197,7 @@ inline task_resume(callerId, schedId, task, rc) {
           if
           ::  task.TimeBlock == false && 
               task.SemaBlock == false -> 
-                task.state = Ready;
+                task.state = task.preBlockState;
           ::  else
           fi
           rc = RC_OK;
@@ -204,6 +227,8 @@ inline task_resume(callerId, schedId, task, rc) {
  *
  */
 inline task_delete(task, rc) {
+  byte taskId = task.tid;
+  byte taskSched = task.homeSched;
   atomic {
     if
     ::  task.state == Zombie ->
@@ -225,19 +250,24 @@ inline task_delete(task, rc) {
                       // Remove from all Scheduler Task Queues
                       byte sID = 0;
                       do
-                      ::  sID == NUM_PROC  -> break;
+                      ::  sID == NUM_PROC -> break;
                       ::  else -> 
                             removeSchedQ(task, sID);
                             sID++;
                       od
-                      // Signal Task to flush any remaining states.
-                      schedSignal[task.tid]!0;
                       task.tid = 0;
+                      task.preemptable = 0;
+                      task.TimeBlock = 0;
+                      task.SemaBlock = 0;
+                      task.SuspBlock = 0;
+                      task.pmlid = 0;
+                      task.prio = 0;
                       rc = RC_OK;
                 fi
           fi
     fi
   }
+  schedSignal[taskId]!taskSched; 
 }
 
 /*
@@ -283,7 +313,7 @@ inline task_setPrio(callerId, schedId, task, new, old, rc) {
                 task.prio = new;
                 if
                 ::  new <= old || task.HoldingMutex == false-> 
-                      updateSchedQ(task, schedId);
+                      updateSchedQ(task, task.homeSched);
                 ::  else
 											/*
 											If the task is currently holding any 
@@ -343,24 +373,95 @@ inline task_wakeAfter(schedId, task, time, rc) {
 
 	byte id = task.tid;
 
-	if
-	::  time == PROC_YIELD ->
-				/*  
-						Keep state of task as Ready
-						but send Task to the the end
-						of its priority group.
-				*/
-				updateSchedQ(task, schedId);
-				schedSync(id, schedId);
-	::  else -> 
-				atomic {
-						task.state = Blocked;
-            task.TimeBlock = true;
-						task.ticks = time
-				}
-				// Wait out Blocked State
-				schedSync(id, schedId);
-	fi
+  atomic {
+    if
+    ::  time == PROC_YIELD ->
+          /*  
+              Keep state of task as Ready
+              but send Task to the the end
+              of its priority group.
+          */
+          updateSchedQ(task, task.homeSched);
+    ::  else -> 
+          // Store preblocked state if required
+          // and add TimeBlock state
+          if
+          ::  task.state != Blocked -> // Executing/Ready/Dormant
+                if
+                ::  task.state == Executing -> // Self suspend
+                      task.preBlockState = Ready;
+                ::  else ->
+                      task.preBlockState = task.state;
+                fi
+                task.state = Blocked;
+          ::  else 
+          fi
+          task.TimeBlock = true
+          task.ticks = time
+    fi
+  }
+  // Wait out Blocked State
+  schedSync(id, task.homeSched);
 
 	rc = RC_OK;
+}
+
+inline task_getScheduler(task, scheduler, rc) {
+  // return the home scheduler of the task
+  atomic {
+    if
+    ::  scheduler == 0 ->
+          rc = RC_InvAddr;
+    ::  else -> 
+          if
+          ::  task.state = Zombie ->
+                rc = RC_InvId;
+          ::  else -> 
+                scheduler = task.homeSched;
+                rc = RC_OK;
+          fi
+    fi
+  }
+}
+
+inline task_setScheduler(callerId, schedulerId, task, sched, prio, rc) {
+  // set the home scheduler of the task
+  atomic  {
+    if
+    ::  task.homeSched == sched ->
+          rc = RC_OK;
+    ::  task.state == Zombie ->
+          rc = RC_InvId;
+    ::  task.tid == 0 ->
+          rc = RC_InvId;
+    ::  sched >= INVALID_SCHED ->
+          rc = RC_InvId;
+    ::  else ->
+          if
+          ::  prio > MAX_PRIO || prio == 0 ->
+                rc = RC_InvPrio;
+          ::  else ->
+                if
+                ::  task.state == Blocked || task.inheritedPrio != 0 ->
+                      rc = RC_RsrcInUse;
+                ::  else -> 
+                      // TODO Investigate:
+                      // Remove the task from its old home scheduler.
+                      // If setting self scheduler:
+                      // ping it to satisfy the handshake first..
+                      if
+                      ::  task.tid == callerId ->
+                            taskSignal[task.homeSched]!0;
+                            schedulerId = sched;
+                      ::  else
+                      fi
+                      removeSchedQ(task, task.homeSched);
+                      task.homeSched = sched;
+                      // And add it to its new home scheduler.
+                      insertSchedQ(task, task.homeSched);
+                      rc = RC_OK;
+                fi
+          fi
+    fi
+  }
 }

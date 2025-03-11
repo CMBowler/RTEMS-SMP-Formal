@@ -1,4 +1,3 @@
-#define NUM_PROC 1
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
@@ -7,6 +6,8 @@
 #define SEMA_LOCK           (3)
 #define SEMA_TASK0_FIN      (4)
 #define SEMA_TASK1_FIN   	  (5)
+#define SEMA_TASK2_FIN   	  (6)
+#define SEMA_TASK3_FIN   	  (7)
 
 /*
  * We need to output annotations for any #define we use.
@@ -26,6 +27,8 @@
 #define RUNNER_ID       1
 #define TASK0_ID        2
 #define TASK1_ID        3
+#define TASK2_ID        4
+#define TASK3_ID        5
 
 #define CLEAR_TASKS     255
 
@@ -127,10 +130,10 @@ inline setTask(tid, rc) {
         ::  raw_tid == 8 ->
                 tid = 3;
         ::  raw_tid == 16 ->
-                tid = 4;
-    /*    
+                tid = 4; 
         ::  raw_tid == 32 ->
                 tid = 5;
+    /*   
         ::  raw_tid == 64 ->
                 tid = 6;
         ::  raw_tid == 128 ->
@@ -156,7 +159,7 @@ inline removeTask(taskID, rc) {
     //TestSyncRelease(SEMA_TASKCONTROL);
 }
 
-inline insertQueue(obj, size, tid) {
+inline insertQueue(obj, size, taskID) {
   /*
     Insert a value into 
     a Queue.
@@ -168,15 +171,15 @@ inline insertQueue(obj, size, tid) {
   ::  else -> 
         if
         ::  obj.Queue[index] == 0 ->
-              obj.Queue[index] = tid;
+              obj.Queue[index] = taskID;
               break;
         :: else -> index++
         fi
   od
 }
 
-inline popQueue(obj, size, tid) {
-  tid = obj.Queue[0];
+inline popQueue(obj, size, taskID) {
+  taskID = obj.Queue[0];
   /* 
     Move all entries in the
     queue up one position.
@@ -190,35 +193,31 @@ inline popQueue(obj, size, tid) {
   od
 }
 
-inline isHoldingMutex(tid, holding, rc) {
+inline isHoldingMutex(task) {
     /*
     If a given task is holding any bin semaphores
     which use a locking protocol: 
     return true, else false
     */
     atomic {
-        holding = false;
-        if
-        ::  tid >= TASK_MAX || tid == 0 ->
-                rc = false;
-        ::  else ->
-                byte mutID = 0;
-                do
-                ::  mutID < SEMA_MAX ->
-                      if
-                      ::  tasks[tid].mutexs[mutID] == 1 ->
-                            holding = true;
-                      ::  else -> mutID++
-                      fi
-                ::  else -> break;
-                od
-        fi
+      task.HoldingMutex = false;
+      byte mutID = 0;
+      do
+      ::  mutID < SEMA_MAX ->
+            if
+            ::  task.mutexs[mutID] == 1 ->
+                  task.HoldingMutex = true;
+                  break;
+            ::  else -> mutID++
+            fi
+      ::  else -> break;
+      od
     }
 }
 
-inline schedSync(tid, schedId) {
+inline schedSync(taskId, schedId) {
     taskSignal[schedId]!0;
-    schedSignal[tid]?schedId;
+    schedSignal[taskId]?schedId;
 }
 
 inline UpdateCount() {
@@ -228,65 +227,78 @@ inline UpdateCount() {
     }
 }
 
-inline ObtainSema(callerId, schedId, sid) {
+inline ObtainSema(task, sid) {
   atomic {
     printf("@@@ %d WAIT %d\n",_pid,sid);
     if
-    ::  semaList[sid].free ->
-          semaList[sid].free = false;
+    ::  semaList[sid].free == true ->
+            semaList[sid].free = false;
     ::  else ->
             insertQueue(
               semaList[sid],
               TASK_MAX,
-              callerId
+              task.tid
             )
-            tasks[callerId].state = Blocked;
-            tasks[callerId].SemaBlock = true;
-          schedSync(callerId, schedId);
+            // Store preblocked state if required
+            // and add SemaBlock state
+            if
+            ::  task.state != Blocked -> // Executing/Ready/Dormant
+                  if
+                  ::  task.state == Executing -> // Self suspend
+                        task.preBlockState = Ready;
+                  ::  else ->
+                        task.preBlockState = task.state;
+                  fi
+                  task.state = Blocked;
+            ::  else
+            fi
+            task.SemaBlock = true; 
     fi
-    printf("@@@ %d LOG WAIT %d Over\n",_pid,sid);
   }
+  schedSync(task.tid, task.homeSched);
+  printf("@@@ %d LOG WAIT %d Over\n",_pid,sid);
 }
 
-inline ReleaseSema(callerId, schedId, sid) {
+inline ReleaseSema(task, sid) {
   atomic {
     printf("@@@ %d SIGNAL %d\n",_pid,sid);
     semaList[sid].free = true;
   }
-  schedSync(callerId, schedId);
+  //schedSync(task.tid, task.homeSched);
 }
 
-inline ObtainMutex(tid, schedId, sid) {
+inline ObtainMutex(task, sid) {
   atomic {
-    ObtainSema(tid, schedId, sid)
-    tasks[tid].mutexs[sid] = 1;
-    tasks[tid].HoldingMutex = true;
+    ObtainSema(task, sid)
+    task.mutexs[sid] = 1;
+    task.HoldingMutex = true;
   }
 }
 
-inline ReleaseMutex(callerId, schedId, sid) { 
+inline ReleaseMutex(task, sid) { 
   bool rc; // TODO 
   atomic {
     if
-    ::  tasks[callerId].mutexs[sid] == 1 ->
-          tasks[callerId].mutexs[sid] = 0;
-          isHoldingMutex(callerId, tasks[callerId].HoldingMutex, rc);
+    ::  task.mutexs[sid] == 1 ->
+          task.mutexs[sid] = 0;
+          isHoldingMutex(task);
           // If no Longer Holding a Mutex -> Allow Prio to Lower
           if
-          ::  tasks[callerId].HoldingMutex == false && 
-              tasks[callerId].inheritedPrio != 0 -> 
+          ::  task.HoldingMutex == false && 
+              task.inheritedPrio != 0 -> 
                   if
-                  ::  tasks[callerId].preemptable ->
-                        updateSchedQ(tasks[callerId], schedId);
+                  ::  task.preemptable ->
+                        updateSchedQ(task, task.homeSched);
                   ::  else
                   fi
-                  tasks[callerId].inheritedPrio = 0;
+                  task.inheritedPrio = 0;
           :: else
           fi
-          ReleaseSema(callerId, schedId, sid);
+          ReleaseSema(task, sid);
     ::  else -> rc = false
     fi
   }
+  schedSync(task.tid, task.homeSched);
 }
 
 inline insertSchedQ(newTask, sid) {
@@ -316,11 +328,11 @@ inline insertSchedQ(newTask, sid) {
 
   /* Debug : print schedQ
   i = 0;
-  printf(" LOG : Updated Task Queue %d: ", schid);
+  printf(" LOG : Updated Task Queue %d: ", sid);
   do
   ::  i == TASK_MAX -> break;
   ::  else ->     
-        printf("%d ", schedList[schid].taskQueue[i]);
+        printf("%d ", schedList[sid].taskQueue[i]);
         i=i+1;
   od
   nl();

@@ -28,6 +28,7 @@ typedef Task {  // rename as Task_Common ? Common_Task
   bool TimeBlock = false;
   bool SemaBlock = false;
   bool SuspBlock = false;
+  mtype preBlockState;
   byte start;
   bool preemptable;
   bool timeslicing;
@@ -39,6 +40,8 @@ typedef Task {  // rename as Task_Common ? Common_Task
   bool tout; // true if woken by a timeout
   bool isr;     // If task is woken from Interrupt context
   byte inheritedPrio;
+  byte homeSched;
+  byte schedulers[NUM_PROC];
   bool HoldingMutex;
   bool mutexs[SEMA_MAX]; // List of Semaphores the task is currently holding.
 };
