@@ -127,6 +127,7 @@ typedef struct {
     rtems_id runner_wakeup; // ID of the semaphore used to wake up the runner task
     rtems_id worker0_flag; // ID of the semaphore used to wake up the worker task
     rtems_id worker1_flag; // ID of the semaphore used to wake up the worker task
+    rtems_id worker2_flag; // ID of the semaphore used to wake up the worker task
     rtems_id lock_0; // ID of the semaphore used to wake up lock 0
     rtems_id runner_sched; // scheduler ID of scheduler used by the runner task
     rtems_id other_sched; // scheduler ID of another scheduler

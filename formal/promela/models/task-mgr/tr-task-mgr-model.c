@@ -166,6 +166,7 @@ static void RtemsModelTaskMgr_Teardown(
   T_log( T_NORMAL, "Deleting Worker Flags TestSync Semaphore" );
   DeleteTestSyncSema( ctx->worker0_flag );
   DeleteTestSyncSema( ctx->worker1_flag );
+  DeleteTestSyncSema( ctx->worker2_flag );
 }
 
 void RtemsModelTaskMgr_Teardown_Wrap( void *arg )

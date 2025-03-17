@@ -68,12 +68,10 @@ tasks_DCL: void ( *{0}[TASK_MAX] )( rtems_task_argument );
 
 INIT: |
   init_tid( taskID, TASK_MAX );
-  initialise_semaphore( 0, ctx->runner_wakeup, semaphore );
-  initialise_semaphore( 1, ctx->worker0_wakeup, semaphore );
-  initialise_semaphore( 2, ctx->worker1_wakeup, semaphore );
-  initialise_semaphore( 3, ctx->lock_0, semaphore );
-  initialise_semaphore( 4, ctx->worker0_flag, semaphore );
-  initialise_semaphore( 5, ctx->worker1_flag, semaphore );
+  initialise_semaphore( 1, ctx->lock_0, semaphore );
+  initialise_semaphore( 2, ctx->worker0_flag, semaphore );
+  initialise_semaphore( 3, ctx->worker1_flag, semaphore );
+  initialise_semaphore( 4, ctx->worker2_flag, semaphore );
 
   T_log( T_NORMAL, "Max Active Tasks: %d\n", rtems_configuration_get_maximum_tasks());
 

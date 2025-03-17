@@ -16,11 +16,10 @@ static void Worker{0}_0( rtems_task_argument arg )
 #endif
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  //ReleaseTestSyncSema( ctx->worker0_wakeup );
-  //ReleaseTestSyncSema( ctx->worker1_wakeup );
-  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->worker0_flag );
+  //ReleaseTestSyncSema( ctx->worker1_flag );
+  //ReleaseTestSyncSema( ctx->worker2_flag );
   //ReleaseTestSyncSema( ctx->lock_0 );
-  
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
 
@@ -28,12 +27,14 @@ static void Worker{0}_0( rtems_task_argument arg )
 
 static void Worker{0}_1( rtems_task_argument arg )
 {{
+
+  T_log( T_NORMAL, "Worker 1 Started" );
+  Context *ctx;
   rtems_event_set events;
 
-#ifdef TASK_1
-    Context *ctx;
-    ctx = (Context *) arg;
+  ctx = (Context *) arg;
 
+#ifdef TASK_1
     T_log( T_NORMAL, "Worker 1 Running" );
     TestSegment3( ctx );
     T_log( T_NORMAL, "Worker 1 finished" );
@@ -41,9 +42,9 @@ static void Worker{0}_1( rtems_task_argument arg )
 
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  //ReleaseTestSyncSema( ctx->worker0_wakeup );
-  //ReleaseTestSyncSema( ctx->worker1_wakeup );
-  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->worker0_flag );
+  //ReleaseTestSyncSema( ctx->worker1_flag );
+  //ReleaseTestSyncSema( ctx->worker2_flag );
   //ReleaseTestSyncSema( ctx->lock_0 );
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
@@ -52,11 +53,15 @@ static void Worker{0}_1( rtems_task_argument arg )
 
 static void Worker{0}_2( rtems_task_argument arg )
 {{
+
+  T_log( T_NORMAL, "Worker 2 Started" );
+  Context *ctx;
   rtems_event_set events;
+
+  ctx = (Context *) arg;
   
 #ifdef TASK_2
-    Context *ctx;
-    ctx = (Context *) arg;
+
 
     T_log( T_NORMAL, "Worker 2 Running" );
     TestSegment4( ctx );
@@ -65,9 +70,9 @@ static void Worker{0}_2( rtems_task_argument arg )
 
   // (void) rtems_task_suspend( RTEMS_SELF );
   // Ensure we hold no semaphores
-  //ReleaseTestSyncSema( ctx->worker0_wakeup );
-  //ReleaseTestSyncSema( ctx->worker1_wakeup );
-  //ReleaseTestSyncSema( ctx->runner_wakeup );
+  //ReleaseTestSyncSema( ctx->worker0_flag );
+  //ReleaseTestSyncSema( ctx->worker1_flag );
+  //ReleaseTestSyncSema( ctx->worker2_flag );
   //ReleaseTestSyncSema( ctx->lock_0 );
   // Wait for events so we don't terminate
   rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
@@ -94,23 +99,20 @@ static void RtemsModelTaskMgr_Setup{0}(
   ctx->runner_thread = _Thread_Get_executing();
   ctx->runner_id = ctx->runner_thread->Object.id;
 
-  T_log( T_NORMAL, "Creating Worker 0 TestSync Semaphore" );
-  ctx->worker0_wakeup = CreateTestSyncSema( "WRK0" );
-  T_log( T_NORMAL, "Creating Worker 1 TestSync Semaphore" );
-  ctx->worker1_wakeup = CreateTestSyncSema( "WRK1" );
-  T_log( T_NORMAL, "Creating Runner TestSync Semaphore" );
-  ctx->runner_wakeup = CreateTestSyncSema( "RUNR" );
   T_log( T_NORMAL, "Creating Lock 0 TestSync Mutex" );
   ctx->lock_0 = CreateTestSyncMutex( "MTX0" );
+
   T_log( T_NORMAL, "Creating Worker0 Flag TestSync Semaphore" );
   ctx->worker0_flag = CreateTestSyncSema( "WKF0" );
   T_log( T_NORMAL, "Creating Worker1  Flag TestSync Semaphore" );
   ctx->worker1_flag = CreateTestSyncSema( "WKF1" );
+  T_log( T_NORMAL, "Creating Worker1  Flag TestSync Semaphore" );
+  ctx->worker2_flag = CreateTestSyncSema( "WKF2" );
 
   // Add worker to the taskId array:
-  tasks[1] = Worker{0}_0;
-  tasks[2] = Worker{0}_1;
-  tasks[3] = Worker{0}_2;
+  tasks[2] = Worker{0}_0;
+  tasks[3] = Worker{0}_1;
+  tasks[4] = Worker{0}_2;
   
 }}
 
@@ -227,7 +229,6 @@ void RtemsModelTaskMgr_Run{0}(
   RtemsModelTaskMgr_Cleanup( ctx );
 
   T_log( T_NORMAL, "Run Pop Fixture" );
-  ShowWorkerSemaId( ctx->worker_id, ctx->worker0_wakeup );
   T_pop_fixture();
   
 }}

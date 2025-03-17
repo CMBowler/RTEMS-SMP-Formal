@@ -1,13 +1,11 @@
 
 // We use two semaphores to synchronise the tasks
 #define INVALID_ENTRY       (0)
-#define SEMA_TASK_START_0 	(1)
-#define SEMA_TASK_START_1  	(2)
-#define SEMA_LOCK           (3)
-#define SEMA_TASK0_FIN      (4)
-#define SEMA_TASK1_FIN   	  (5)
-#define SEMA_TASK2_FIN   	  (6)
-#define SEMA_TASK3_FIN   	  (7)
+#define SEMA_LOCK           (1)
+#define SEMA_TASK0_FIN      (2)
+#define SEMA_TASK1_FIN   	  (3)
+#define SEMA_TASK2_FIN   	  (4)
+#define SEMA_TASK3_FIN   	  (5)
 
 /*
  * We need to output annotations for any #define we use.

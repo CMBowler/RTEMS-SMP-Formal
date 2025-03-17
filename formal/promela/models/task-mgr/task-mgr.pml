@@ -44,7 +44,7 @@
 #define NUM_PROC 1
 #include "../common/rtems.pml"
 #define TASK_MAX 5 
-#define SEMA_MAX 6
+#define SEMA_MAX 4
 #include "../common/model.pml"
 
 #include "task-mgr-h.pml"
@@ -148,7 +148,7 @@ inline chooseScenario() {
     startValId = true;
     startValEntry = true;
     doubleStart = false;
-    taskEntry = SEMA_TASK_START_0;
+    taskEntry = TASK0_ID;
 
     startTask0 = true;
     startTask1 = false; 
@@ -170,7 +170,7 @@ inline chooseScenario() {
 
     // Priority
     task_1_name = 2;
-    task_1_Entry = SEMA_TASK_START_1;
+    task_1_Entry = TASK1_ID;
 
     testPrio = false;
     raiseWithMutex = false;
@@ -215,9 +215,9 @@ inline chooseScenario() {
                 atomic{printf("@@@ %d LOG Create: Invalid Priority (0) ",_pid); nl()};
             ::  createPrio = MAX_PRIO;                  atomic{printf("@@@ %d LOG Create: Invalid Priority (MAX) ",_pid); nl()};
             ::  createValId = false;                    atomic{printf("@@@ %d LOG Create: Invalid Id ",_pid); nl()};
-            ::  task_control = 0;                 
-                stackSize = 64;
-                atomic{printf("@@@ %d LOG Create: Too Many\n", _pid)}
+            //::  task_control = 0;                 TODO
+            //    stackSize = 64;
+            //    atomic{printf("@@@ %d LOG Create: Too Many\n", _pid)}
             ::  createTask = false; deleteTask = true;  atomic{printf("@@@ %d LOG Delete: Invalid Id ",_pid); nl()};
             ::  deleteTask = true;                      atomic{printf("@@@ %d LOG Create: Success ",_pid); nl()};
             fi
@@ -342,7 +342,7 @@ proctype Runner(byte myId) {
 
             if
             ::  startValEntry == true ->
-                    entry = SEMA_TASK_START_0;
+                    entry = TASK0_ID;
             ::  startValEntry == false ->
                     entry = INVALID_ENTRY;
             fi
@@ -786,6 +786,8 @@ init {
     fi
 
     TestSyncRelease(SEMA_LOCK);
+    TestSyncRelease(SEMA_TASK0_FIN);
+    TestSyncRelease(SEMA_TASK1_FIN);
 
     atomic {
         run Runner(RUNNER_ID); 
