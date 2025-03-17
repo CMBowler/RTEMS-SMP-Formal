@@ -1,9 +1,26 @@
 // SMP Helper Functions
 
+inline clearSuspends(myId, schedId) {
+    byte taskID = 2;
+    do
+    ::  taskID == TASK_MAX -> break;
+    ::  else -> 
+          task_isSuspend(tasks[taskID], rc);
+          if
+          ::  rc == RC_AlrSuspd ->
+                printf("@@@ %d CALL task_resume %d resumeRC\n", 
+                        _pid, taskID);
+                task_resume(myId, schedId, tasks[taskID], rc);
+                printf("@@@ %d SCALAR resumeRC %d\n",_pid,rc);
+          ::  else
+          fi
+          taskID++;
+    od
+}
+
 inline selectId(tid) {
-  tid = TASK_MAX;
+  tid = INVALID_ID;
   if
-  ::  tid = INVALID_ID;
   ::  tid = TASK0_ID;
   ::  tid = TASK1_ID;
   ::  tid = TASK2_ID;
@@ -15,7 +32,7 @@ inline selectPrio(prio) {
   prio = MAX_PRIO;
   if
   ::  prio = LOW_PRIO;
-  ::  prio = MED_PRIO;
+  //::  prio = MED_PRIO;
   ::  prio = HIGH_PRIO;
   fi
 }
@@ -24,15 +41,13 @@ inline selectTime(time) {
   time = 1;
   if
   ::  time = PROC_YIELD;
-  ::  time = 2;
-  ::  time = 20;
+  ::  time = 10;
   fi
 }
 
 inline selectSched(sId) {
-  sId = INVALID_SCHED+1;
+  sId = INVALID_SCHED;
   if
-  ::  sId = INVALID_SCHED;
   ::  sId = 0;
   ::  sId = 1;
   ::  sId = 2;
@@ -51,8 +66,8 @@ mtype {
 inline selectOp(schedId, tid, prio, ticks, schId, rc) {
   mtype operation
   if
-  ::  operation = suspend;
-  ::  operation = resume;
+  //::  operation = suspend;
+  //::  operation = resume;
   ::  operation = setPrio;
   ::  operation = wakeAfter;
   //::  operation = setSched;

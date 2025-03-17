@@ -491,14 +491,14 @@ repeat_start:
     ::  deleteTask == true -> 
       printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, deleteId);
       
-      task_delete(tasks[deleteId], deleteRC);
+      task_delete(myId, schedId, tasks[deleteId], deleteRC);
 
       printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
       if
       ::  startTask1 == true ->
             printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, tsk1_ID);
 
-            task_delete(tasks[tsk1_ID], deleteRC);
+            task_delete(myId, schedId, tasks[tsk1_ID], deleteRC);
 
             printf("@@@ %d SCALAR delRC %d\n", _pid, deleteRC);
       ::  else
@@ -507,7 +507,7 @@ repeat_start:
     fi
 
     // Delete Self (Runner) in Promela
-    task_delete(tasks[myId], deleteRC);
+    task_exit(tasks[myId]);
     // Signal to Sched Task is over.
     taskSignal[schedId]!0;
 }

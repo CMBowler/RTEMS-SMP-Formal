@@ -11,7 +11,7 @@ static void Worker{0}_0( rtems_task_argument arg )
 
 #ifdef TASK_0
     T_log( T_NORMAL, "Worker 0 Running" );
-    TestSegment3( ctx );
+    TestSegment2( ctx );
     T_log( T_NORMAL, "Worker 0 finished" );
 #endif
   // (void) rtems_task_suspend( RTEMS_SELF );
@@ -35,7 +35,7 @@ static void Worker{0}_1( rtems_task_argument arg )
     ctx = (Context *) arg;
 
     T_log( T_NORMAL, "Worker 1 Running" );
-    TestSegment4( ctx );
+    TestSegment3( ctx );
     T_log( T_NORMAL, "Worker 1 finished" );
 #endif
 
@@ -59,7 +59,7 @@ static void Worker{0}_2( rtems_task_argument arg )
     ctx = (Context *) arg;
 
     T_log( T_NORMAL, "Worker 2 Running" );
-    TestSegment5( ctx );
+    TestSegment4( ctx );
     T_log( T_NORMAL, "Worker 2 finished" );
 #endif
 

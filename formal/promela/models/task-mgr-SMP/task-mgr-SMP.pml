@@ -20,6 +20,8 @@ proctype Runner(byte myId) {
   byte schedId;
   schedSignal[myId]?schedId;
 
+  byte newSched=0;
+
   byte old_prio = 0;
   byte setRC, rc;
 
@@ -57,10 +59,8 @@ proctype Runner(byte myId) {
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
   
   // Create Task1
-  // Add to Sched1
-  schedId++;
+
   name++;
-  task_setScheduler(myId, schedId, tasks[myId], schedId, prio, rc);
   setTask(tsk1_id, setRC);
   printf("@@@ %d CALL task_create %d %d %d %d %d %d createRC\n", 
           _pid, name, prio, stackSize, preempt, attr, tsk1_id);
@@ -76,11 +76,14 @@ proctype Runner(byte myId) {
   );
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
 
+  // Add to Sched1
+  newSched++;
+
+  task_setScheduler(myId, schedId, tasks[tsk1_id], newSched, prio, rc);
+
   // Create Task2
-  // Add to Sched2
-  schedId++;
+
   name++;
-  task_setScheduler(myId, schedId, tasks[myId], schedId, prio, rc);
   setTask(tsk2_id, setRC);
   printf("@@@ %d CALL task_create %d %d %d %d %d %d createRC\n", 
           _pid, name, prio, stackSize, preempt, attr, tsk2_id);
@@ -95,12 +98,16 @@ proctype Runner(byte myId) {
     rc
   );
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
+
+  // Add to Sched1
+  newSched++;
+
+  task_setScheduler(myId, schedId, tasks[tsk2_id], newSched, prio, rc);
   
   // Create Task3
   // Add to Sched3
-  schedId++;
+
   name++;
-  task_setScheduler(myId, schedId, tasks[myId], schedId, prio, rc);
   setTask(tsk3_id, setRC);
   printf("@@@ %d CALL task_create %d %d %d %d %d %d createRC\n", 
           _pid, name, prio, stackSize, preempt, attr, tsk3_id);
@@ -115,6 +122,11 @@ proctype Runner(byte myId) {
     rc
   );
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
+
+  // Add to Sched1
+  newSched++;
+
+  task_setScheduler(myId, schedId, tasks[tsk3_id], newSched, prio, rc);
 
   // ----------------------------------------------
 
@@ -174,33 +186,19 @@ proctype Runner(byte myId) {
 
   // Allow Tasks to run
 
-  byte opsPerTask = 3;
+  byte opsPerTask = 1;
   byte opCount=0;
   do
   ::  opCount == opsPerTask -> break;
   ::  else ->
         printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
-                _pid, myId, 25);
-        task_wakeAfter(schedId, tasks[myId], 25, rc);
+                _pid, myId, 10);
+        task_wakeAfter(schedId, tasks[myId], 10, rc);
         printf("@@@ %d SCALAR wakeAfterRC %d\n",_pid, rc);
 
         // For each task, if it is stuck in suspension, resume:
+        clearSuspends(myId, schedId);
 
-        byte taskID = 2;
-        do
-        ::  taskID == TASK_MAX -> break;
-        ::  else -> 
-              task_isSuspend(tasks[taskID], rc);
-              if
-              ::  rc == RC_AlrSuspd ->
-                    printf("@@@ %d CALL task_resume %d resumeRC\n", 
-                            _pid, taskID);
-                    task_resume(myId, schedId, tasks[taskID], rc);
-                    printf("@@@ %d SCALAR resumeRC %d\n",_pid,rc);
-              ::  else
-              fi
-              taskID++;
-        od
         opCount++;
   od
 
@@ -216,6 +214,13 @@ proctype Runner(byte myId) {
   }
   */
 
+  printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
+        _pid, myId, PROC_YIELD);
+  task_wakeAfter(schedId, tasks[myId], PROC_YIELD, rc);
+  printf("@@@ %d SCALAR wakeAfterRC %d\n",_pid, rc);
+
+  clearSuspends(myId, schedId);
+
   ObtainSema(tasks[myId], SEMA_TASK0_FIN);
   ObtainSema(tasks[myId], SEMA_TASK1_FIN);
   ObtainSema(tasks[myId], SEMA_TASK2_FIN);
@@ -225,12 +230,12 @@ proctype Runner(byte myId) {
 
   // Delete All remaining Tasks:
 
-  taskID = 2;
+  byte taskID = 2;
   do
   ::  taskID == TASK_MAX -> break;
   ::  else -> 
       printf( "@@@ %d CALL task_delete %d deleteRC\n", _pid, taskID);
-      task_delete(tasks[taskID], rc);
+      task_delete(myId, schedId, tasks[taskID], rc);
       printf("@@@ %d SCALAR delRC %d\n", _pid, rc);
       taskID++;
   od
@@ -238,7 +243,7 @@ proctype Runner(byte myId) {
   // ----------------------------------------------
 
   // Delete Self (Runner) in Promela
-  task_delete(tasks[myId], rc);
+  task_exit(tasks[myId]);
   // Signal to Sched Task is over.
   taskSignal[schedId]!0;
 }
@@ -260,16 +265,13 @@ proctype TaskN(byte myId, semaId) {
 
   atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
 
-  atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
+  //atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
 
   // Quick Fix -> Set state to dormant if ProcType Ends before Task is deleted. 
   tasks[myId].state = Dormant;
   ReleaseSema(tasks[myId], semaId);
   // Signal to Sched Task is over.
-  do
-  :: taskSignal[schedId]!0 -> break;
-  :: timeout -> break;
-  od
+  taskSignal[schedId]!0
 }
 
 init {
@@ -304,13 +306,12 @@ init {
 
     task_control = 60;	// 0011 1100 Task[1] reserved for runner.
 
-    atomic {
-        run Runner(RUNNER_ID); 
-        run TaskN(TASK0_ID, SEMA_TASK0_FIN); 
-        run TaskN(TASK1_ID, SEMA_TASK1_FIN);
-        run TaskN(TASK2_ID, SEMA_TASK2_FIN);
-        run TaskN(TASK3_ID, SEMA_TASK3_FIN);
-    }
+    run Runner(RUNNER_ID); 
+    run TaskN(TASK0_ID, SEMA_TASK0_FIN); 
+    run TaskN(TASK1_ID, SEMA_TASK1_FIN);
+    run TaskN(TASK2_ID, SEMA_TASK2_FIN);
+    run TaskN(TASK3_ID, SEMA_TASK3_FIN);
+
     MultiSchedulerInit();
 
     _nr_pr == 1;

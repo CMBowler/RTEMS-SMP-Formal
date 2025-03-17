@@ -226,7 +226,7 @@ inline task_resume(callerId, schedId, task, rc) {
  *     `tid` models `rtems_id id`
  *
  */
-inline task_delete(task, rc) {
+inline task_delete(callerId, schedId, task, rc) {
   byte taskId = task.tid;
   byte taskSched = task.homeSched;
   atomic {
@@ -267,7 +267,52 @@ inline task_delete(task, rc) {
           fi
     fi
   }
-  schedSignal[taskId]!taskSched; 
+  //schedSignal[taskId]!taskSched; 
+  schedSync(callerId, schedId);
+}
+
+inline task_exit(task) {
+  assert(task.pmlid == _pid);
+  byte taskId = task.tid;
+  byte taskSched = task.homeSched;
+  atomic {
+    if
+    ::  task.state == Zombie ->
+          skip;
+    ::  else ->
+          if
+          ::  task.isr == true ->
+                skip;
+          ::  else ->
+                bool isremoved;
+                removeTask(task.tid, isremoved);
+                if
+                ::  isremoved == false ->
+                      skip;
+                ::  else ->
+                      // Reset elements of TCB
+                      task.state = Zombie;
+                      task.start = 0;
+                      // Remove from all Scheduler Task Queues
+                      byte sID = 0;
+                      do
+                      ::  sID == NUM_PROC -> break;
+                      ::  else -> 
+                            removeSchedQ(task, sID);
+                            sID++;
+                      od
+                      task.tid = 0;
+                      task.preemptable = 0;
+                      task.TimeBlock = 0;
+                      task.SemaBlock = 0;
+                      task.SuspBlock = 0;
+                      task.pmlid = 0;
+                      task.prio = 0;
+                      skip;
+                fi
+          fi
+    fi
+  }
 }
 
 /*
@@ -445,16 +490,6 @@ inline task_setScheduler(callerId, schedulerId, task, sched, prio, rc) {
                 ::  task.state == Blocked || task.inheritedPrio != 0 ->
                       rc = RC_RsrcInUse;
                 ::  else -> 
-                      // TODO Investigate:
-                      // Remove the task from its old home scheduler.
-                      // If setting self scheduler:
-                      // ping it to satisfy the handshake first..
-                      if
-                      ::  task.tid == callerId ->
-                            taskSignal[task.homeSched]!0;
-                            schedulerId = sched;
-                      ::  else
-                      fi
                       removeSchedQ(task, task.homeSched);
                       task.homeSched = sched;
                       // And add it to its new home scheduler.
@@ -464,4 +499,6 @@ inline task_setScheduler(callerId, schedulerId, task, sched, prio, rc) {
           fi
     fi
   }
+  
+  schedSync(callerId, schedulerId);
 }
