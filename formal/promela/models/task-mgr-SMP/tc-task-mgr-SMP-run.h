@@ -1,9 +1,9 @@
 /**
  * @fn void T_case_body_RtemsEventValSendReceive( void )
  */
-T_TEST_CASE( RtemsModelTaskMgr{0} )
+T_TEST_CASE( RtemsModelTaskMgrSMP{0} )
 {{
-  RtemsModelTaskMgr_Run{0}(
+  RtemsModelTaskMgrSMP_Run{0}(
     TaskCreate,
     TaskStart,
     TaskDelete,

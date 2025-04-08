@@ -58,6 +58,8 @@ setPriorityRC_DCL: rtems_status_code
 
 wakeAfterRC_DCL: rtems_status_code
 
+setSchedulerRC_DCL: rtems_status_code
+
 globalCounter_DCL: int
 
 priority_DCL: rtems_task_priority
@@ -66,14 +68,41 @@ taskID_DCL: rtems_id {0}[TASK_MAX];
 
 tasks_DCL: void ( *{0}[TASK_MAX] )( rtems_task_argument );
 
+scheduler_DCL: rtems_id {0}[MAX_PROC];
+
 INIT: |
   init_tid( taskID, TASK_MAX );
   initialise_semaphore( 1, ctx->lock_0, semaphore );
   initialise_semaphore( 2, ctx->worker0_flag, semaphore );
   initialise_semaphore( 3, ctx->worker1_flag, semaphore );
   initialise_semaphore( 4, ctx->worker2_flag, semaphore );
+  initialise_semaphore( 5, ctx->worker3_flag, semaphore );
 
   T_log( T_NORMAL, "Max Active Tasks: %d\n", rtems_configuration_get_maximum_tasks());
+
+  T_log( T_NORMAL, "Maximum nuber of Processors: %d\n", rtems_scheduler_get_processor_maximum());
+
+  #ifdef TASK_MGR_SMP
+  rtems_status_code setSched = RTEMS_SUCCESSFUL;
+  rtems_id schedID;
+  for (int cpu_index=0; cpu_index<rtems_scheduler_get_processor_maximum(); cpu_index++) {
+    setSched = rtems_scheduler_ident_by_processor(
+      cpu_index,
+      &schedID
+    );
+    if (setSched) {
+      T_log( T_NORMAL, "Error assigning Scheduler %d\n", cpu_index);
+    } else {
+      scheduler[cpu_index] = schedID;
+      T_log( T_NORMAL, "Found scheduler %x\n", scheduler[cpu_index]);
+
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(cpu_index, &cpuset);
+    }
+  }
+  #endif // TASK_MGR_SMP
+
 
 TASK_INIT: |
   T_log( T_NORMAL, "Starting Task %d", {0});
@@ -136,6 +165,11 @@ task_wakeAfter: |
   {2} = ( *ctx->t_wakeAfter )( {1} ? (rtems_interval){1} : RTEMS_YIELD_PROCESSOR );
   T_log( T_NORMAL, "Returned 0x%x from Wake After", {2} );
 
+task_setScheduler: |
+  T_log( T_NORMAL, "Setting the Home Scheduler of task %d to Scheduler %d with a prio: %d", {0}, {1}, {2});
+  {3} = ( *ctx->t_setScheduler )( {0} ? taskID[{0}] : 0xffffffff, scheduler[{1}], {2} );
+  T_log( T_NORMAL, "Returned 0x%x from Set Scheduler", {3} );
+
 updateCounter: |
   T_rsc( globalCounter, {0} );
   globalCounter++;
@@ -163,6 +197,9 @@ setPriorityRC: |
 
 wakeAfterRC: |
   T_rsc( wakeAfterRC, {0} );
+
+setSchedulerRC: |
+  T_rsc( setSchedulerRC, {0});
 
 oldPrio: |
   T_log( T_NORMAL, "Returned Priority: %d from Set Priority", priority );
@@ -282,149 +319,3 @@ SetProcessor: |
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(processor, &cpuset);
-
-DebugRunner: |
-  rtems_status_code status = RTEMS_SUCCESSFUL;
-
-  T_log( T_NORMAL, "Ticks/s : %d\n", rtems_clock_get_ticks_per_second());
-  
-  // Set Priority to default
-  rtems_task_priority old_prio;
-  status |= rtems_task_set_priority(RTEMS_SELF, LOW_PRIO, &old_prio);
-  if (status != RTEMS_SUCCESSFUL) {
-      T_log( T_NORMAL, "Failed to change Priority\n" );
-      return;
-  }
-
-  T_log( T_NORMAL, "Runner : Set self priority from %d to %d\n", old_prio, LOW_PRIO);
-  
-  T_log( T_NORMAL, "Runner : Creating Jobs J1\n" );
-  
-  // Create task J0 (Medium Priority)
-  status |= rtems_task_create(
-      rtems_build_name('J', '0', ' ', ' '),
-      MED_PRIO+1, // Medium priority
-      RTEMS_MINIMUM_STACK_SIZE,
-      RTEMS_DEFAULT_MODES,
-      RTEMS_DEFAULT_ATTRIBUTES,
-      &taskID[2]
-  );
-  
-  // Create task J1 (High Priority)
-  status |= rtems_task_create(
-      rtems_build_name('J', '1', ' ', ' '),
-      MED_PRIO, // High priority
-      RTEMS_MINIMUM_STACK_SIZE,
-      RTEMS_DEFAULT_MODES,
-      RTEMS_DEFAULT_ATTRIBUTES,
-      &taskID[3]
-  );
-  
-  // Create task J2 (High Priority)
-  status |= rtems_task_create(
-      rtems_build_name('J', '2', ' ', ' '),
-      MED_PRIO, // High priority
-      RTEMS_MINIMUM_STACK_SIZE,
-      RTEMS_DEFAULT_MODES,
-      RTEMS_DEFAULT_ATTRIBUTES,
-      &taskID[4]
-  );
-  
-  if (status != RTEMS_SUCCESSFUL) {
-      T_log( T_NORMAL, "Failed to create a Job\n" );
-      return;
-  }
-  
-  // Start task J0
-  T_log( T_NORMAL, "Runner : Starting Job 0\n" );
-  status = rtems_task_start(taskID[2], tasks[1], (rtems_task_argument)(void *)(ctx));
-  
-  if (status != RTEMS_SUCCESSFUL) {
-      T_log( T_NORMAL, "Failed to Start J0\n" );
-      return;
-  }
-
-  // Allow time for tasks to complete
-  T_log( T_NORMAL, "Runner : Wait for Jobs to Conclude.\n" );
-
-  // Get system info for debugging
-  rtems_cpu_usage_report();
-  
-  rtems_event_set signal = RTEMS_EVENT_0 | RTEMS_EVENT_1 | RTEMS_EVENT_2;
-  rtems_event_set events;
-  T_log( T_NORMAL, "Runner : Receiving signal %x.\n", signal);
-  status = rtems_event_receive(signal, RTEMS_WAIT | RTEMS_EVENT_ALL, 0, &events);
-
-  if (status != RTEMS_SUCCESSFUL) {
-      T_log( T_NORMAL, "Error in Event Receive J0\n" );
-  }
-
-  // Get system info for debugging
-  rtems_cpu_usage_report();
-
-DebugTask0 : |
-  T_log( T_NORMAL, "Task 0 : Started\n" );
-  rtems_status_code status = RTEMS_SUCCESSFUL;
-
-  // Start J1 (High Priority)
-  T_log( T_NORMAL, "Task 0 : Starting Job 1\n" );
-  status |= rtems_task_start(taskID[3], tasks[2], (rtems_task_argument)(void *)(ctx));
-
-  // Start J2 (High Priority)
-  T_log( T_NORMAL, "Task 0 : Starting Job 2\n" );
-  status |= rtems_task_start(taskID[4], tasks[3], (rtems_task_argument)(void *)(ctx));
-
-  T_log( T_NORMAL, "Task 0 : Doing Some Work\n" );
-  int i = 0;
-  while (i < 1000000) i++;
-
-  // Signal End
-  T_log( T_NORMAL, "Task 0 : Sending signal %x.\n", RTEMS_EVENT_0);
-  rtems_event_send(rtems_task_self(), RTEMS_EVENT_0);
-
-DebugTask1 : |
-  T_log( T_NORMAL, "Task 1 : Started\n" );
-  rtems_status_code status = RTEMS_SUCCESSFUL;
-
-  // Acquire the mutex m1
-  T_log( T_NORMAL, "Task 1 : Attempting to Acquire Mutex\n" );
-  status = rtems_semaphore_obtain(semaphore[3], RTEMS_WAIT, RTEMS_NO_TIMEOUT);
-  T_log( T_NORMAL, "Task 1 : Mutex Acquired\n" );
-
-  // Lower priority to low
-  rtems_task_priority old_prio;
-  rtems_task_priority new_prio;
-  T_log( T_NORMAL, "Task 1 : Changing Priority to %d\n", MED_PRIO+2 );
-  status |= rtems_task_set_priority(RTEMS_SELF, MED_PRIO+2, &old_prio);
-
-  status |= rtems_task_set_priority(RTEMS_SELF, RTEMS_CURRENT_PRIORITY, &new_prio);
-
-  if (status != RTEMS_SUCCESSFUL) T_log( T_NORMAL, "Error in T1\n" );
-
-  T_log( T_NORMAL, "Prio Changed from %d to %d.\n", old_prio, new_prio);
-
-  // Release the mutex m1
-  T_log( T_NORMAL, "Task 1 : Releasing Mutex\n" );
-  rtems_semaphore_release(semaphore[3]);
-
-  // Signal End
-  T_log( T_NORMAL, "Task 1 : Sending signal %x.\n", RTEMS_EVENT_1);
-  rtems_event_send(rtems_task_self(), RTEMS_EVENT_1);
-
-DebugTask2 : |
-  T_log( T_NORMAL, "Task 2 : Started\n" );
-  // Attempt to acquire the mutex m1
-  T_log( T_NORMAL, "Task 2 : Attempting to Acquire Mutex\n" );
-  rtems_semaphore_obtain(semaphore[3], RTEMS_WAIT, RTEMS_NO_TIMEOUT);
-  T_log( T_NORMAL, "Task 2 : Mutex Acquired\n" );
-
-  // Simulate some work
-  rtems_task_wake_after(10); // Simulate delay
-
-  // Release the mutex m1
-  T_log( T_NORMAL, "Task 2 : Releasing Mutex\n" );
-  rtems_semaphore_release(semaphore[3]);
-
-  // Signal End
-  T_log( T_NORMAL, "Task 2 : Sending signal %x.\n", RTEMS_EVENT_2);
-  rtems_event_send(rtems_task_self(), RTEMS_EVENT_2);

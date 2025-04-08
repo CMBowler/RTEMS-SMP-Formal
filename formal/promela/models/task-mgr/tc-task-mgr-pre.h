@@ -84,13 +84,13 @@ static rtems_status_code TaskCreate(
 )
 {
   return rtems_task_create( 
-                            name, 
-                            initial_priority, 
-                            stack_size, 
-                            initial_modes, 
-                            attribute_set, 
-                            id  
-                        );
+        name, 
+        initial_priority, 
+        stack_size, 
+        initial_modes, 
+        attribute_set, 
+        id  
+    );
 }
 
 static rtems_status_code TaskStart(
@@ -100,10 +100,10 @@ static rtems_status_code TaskStart(
 )
 {
     return rtems_task_start(
-                            id,
-                            entry_point,
-                            argument
-                        );
+        id,
+        entry_point,
+        argument
+    );
 }
 
 static rtems_status_code TaskDelete(
@@ -140,10 +140,11 @@ static rtems_status_code TaskSetPriority(
     rtems_task_priority *old_priority
 )
 {
-    return rtems_task_set_priority( id, 
-                                    new_priority, 
-                                    old_priority
-                                );
+    return rtems_task_set_priority(
+        id, 
+        new_priority, 
+        old_priority
+    );
 }
 
 static rtems_status_code TaskWakeAfter(
@@ -151,4 +152,17 @@ static rtems_status_code TaskWakeAfter(
 )
 {
     return rtems_task_wake_after( interval );
+}
+
+static rtems_status_code TaskSetScheduler(
+    rtems_id            task_id,
+    rtems_id            scheduler_id,
+    rtems_task_priority priority
+)
+{
+    return rtems_task_set_scheduler(
+        task_id,
+        scheduler_id,
+        priority
+    );
 }

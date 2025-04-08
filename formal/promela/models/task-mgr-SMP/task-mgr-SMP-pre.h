@@ -41,6 +41,10 @@
  * for information how to maintain and re-generate this file.
  */
 
+#define TASK_MGR_SMP 1
+
+#define CONFIGURE_MAXIMUM_PROCESSORS 4
+
 #ifndef HAVE_CONFIG_H
 #include "config.h"
 #endif

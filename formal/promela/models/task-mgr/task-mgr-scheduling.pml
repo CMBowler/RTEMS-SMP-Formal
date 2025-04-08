@@ -37,13 +37,15 @@ inline MultiSchedulerInit() {
   */
   byte schedId = 0;
   run MultiClock();
-  do
-  ::  schedId == NUM_PROC -> break;
-  ::  else -> 
-        schedList[schedId].sID = schedId;
-        run MultiScheduler(schedId);
-        schedId++
-  od
+  atomic{
+    do
+    ::  schedId == NUM_PROC -> break;
+    ::  else -> 
+          schedList[schedId].sID = schedId;
+          run MultiScheduler(schedId);
+          schedId++
+    od
+  }
 }
 
 inline semaCheck() {
@@ -103,11 +105,10 @@ inline taskSelect(schedID, prevRanTask, TimeSliceCounter) {
                 //        _pid, taskId);
 
                 /* Time Slicing */
-
+                
                 if
-                ::	taskId == prevRanTask &&
-                    tasks[taskId].timeslicing ->
-                      TimeSliceCounter = TimeSliceCounter + 1;
+                ::	taskId == prevRanTask && tasks[taskId].timeslicing ->
+                      TimeSliceCounter++;
                       if
                       ::	TimeSliceCounter == TIMESLICE_MAX ->
                             /* 	
@@ -115,14 +116,15 @@ inline taskSelect(schedID, prevRanTask, TimeSliceCounter) {
                               - Put Task at the back
                                 of its priority group.
                             */
+                            
                             TimeSliceCounter = 0;
                             updateSchedQ(
                               tasks[taskId], 
-                              tasks[taskId].homeSched
+                              schedID
                             );
                       ::	else
                       fi
-                ::	else ->
+                ::	else -> 
                       TimeSliceCounter = 0;
                       prevRanTask = taskId;
                 fi
@@ -283,7 +285,7 @@ proctype MultiClock() {
   ::  liveSeen == false || debugCount > 300 -> break;
   ::  else ->
 
-        printf(" (tick) \n");
+        //printf(" (tick) \n");
         debugCount++;
 
         /* 

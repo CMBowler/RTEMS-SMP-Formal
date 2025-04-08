@@ -105,6 +105,11 @@ typedef struct {
     rtems_status_code ( *t_wakeAfter )(
                         rtems_interval
                     );
+    rtems_status_code ( *t_setScheduler)(
+                        rtems_id,
+                        rtems_id,
+                        rtems_task_priority
+                    );
     unsigned int wait_class; // copy of the corresponding
                             // RtemsModelTaskMgr_Run() parameter
     int waiting_for_event; // copy of the corresponding

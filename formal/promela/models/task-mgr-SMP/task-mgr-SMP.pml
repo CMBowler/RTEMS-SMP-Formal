@@ -1,17 +1,15 @@
-#define NUM_PROC 4
+#define NUM_PROC 2
 #define INVALID_SCHED NUM_PROC
 
 #include "../common/rtems.pml"
 #define TASK_MAX 6
-#define SEMA_MAX 8
+#define SEMA_MAX 6
 #include "../common/model.pml"
 
-#include "../task-mgr/task-mgr-h.pml"
-#include "../task-mgr/task-mgr-API.pml"
-#include "../task-mgr/task-mgr-scheduling.pml"
+#include "task-mgr-h.pml"
+#include "task-mgr-API.pml"
+#include "task-mgr-scheduling.pml"
 #include "task-mgr-SMP-h.pml"
-
-
 
 proctype Runner(byte myId) {
 
@@ -38,6 +36,8 @@ proctype Runner(byte myId) {
                           _pid, MED_PRIO, old_prio);
 
   // ----------------------------------------------
+
+  //
 
   // Create Tasks
 
@@ -76,11 +76,6 @@ proctype Runner(byte myId) {
   );
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
 
-  // Add to Sched1
-  newSched++;
-
-  task_setScheduler(myId, schedId, tasks[tsk1_id], newSched, prio, rc);
-
   // Create Task2
 
   name++;
@@ -101,11 +96,12 @@ proctype Runner(byte myId) {
 
   // Add to Sched1
   newSched++;
-
+  printf("@@@ %d CALL task_setScheduler %d %d %d setSchedulerRC\n", 
+    _pid, tsk2_id, newSched, prio);
   task_setScheduler(myId, schedId, tasks[tsk2_id], newSched, prio, rc);
+  printf("@@@ %d SCALAR setSchedulerRC %d\n",_pid,rc);
   
   // Create Task3
-  // Add to Sched3
 
   name++;
   setTask(tsk3_id, setRC);
@@ -124,26 +120,26 @@ proctype Runner(byte myId) {
   printf("@@@ %d SCALAR createRC %d\n", _pid, rc);
 
   // Add to Sched1
-  newSched++;
 
+  printf("@@@ %d CALL task_setScheduler %d %d %d setSchedulerRC\n", 
+    _pid, tsk3_id, newSched, prio);
   task_setScheduler(myId, schedId, tasks[tsk3_id], newSched, prio, rc);
+  printf("@@@ %d SCALAR setSchedulerRC %d\n",_pid,rc);
 
   // ----------------------------------------------
 
   // Start Tasks together..
-
-  byte Entry = 1;
 
   // Task 0
   task_start(
     myId, 
     tasks[myId].homeSched, 
     tasks[tsk0_id], 
-    Entry, 
+    TASK0_ID, 
     rc
   );
   printf("@@@ %d CALL task_start %d %d startRC\n", 
-          _pid, tsk0_id, Entry);
+          _pid, tsk0_id, TASK0_ID);
   printf("@@@ %d CALL startRC %d\n", _pid, rc);
 
   // Task 1
@@ -151,11 +147,11 @@ proctype Runner(byte myId) {
     myId, 
     tasks[myId].homeSched, 
     tasks[tsk1_id], 
-    Entry, 
+    TASK1_ID, 
     rc
   );
   printf("@@@ %d CALL task_start %d %d startRC\n", 
-          _pid, tsk1_id, Entry);
+          _pid, tsk1_id, TASK1_ID);
   printf("@@@ %d CALL startRC %d\n", _pid, rc);
 
   // Task 2
@@ -163,11 +159,11 @@ proctype Runner(byte myId) {
     myId, 
     tasks[myId].homeSched, 
     tasks[tsk2_id], 
-    Entry, 
+    TASK2_ID, 
     rc
   );
   printf("@@@ %d CALL task_start %d %d startRC\n", 
-          _pid, tsk2_id, Entry);
+          _pid, tsk2_id, TASK2_ID);
   printf("@@@ %d CALL startRC %d\n", _pid, rc);
 
   // Task 3
@@ -175,56 +171,47 @@ proctype Runner(byte myId) {
     myId, 
     tasks[myId].homeSched, 
     tasks[tsk3_id], 
-    Entry, 
+    TASK3_ID, 
     rc
   );
   printf("@@@ %d CALL task_start %d %d startRC\n", 
-          _pid, tsk3_id, Entry);
+          _pid, tsk3_id, TASK3_ID);
   printf("@@@ %d CALL startRC %d\n", _pid, rc);
 
   // ----------------------------------------------
 
   // Allow Tasks to run
 
-  byte opsPerTask = 1;
+  byte opsPerTask = 2;
   byte opCount=0;
   do
   ::  opCount == opsPerTask -> break;
   ::  else ->
+        printf("@@@ %d CALL taskSelf_setPriority %d %d setPriorityRC\n", 
+                _pid, LOW_PRIO, old_prio);
         printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
-                _pid, myId, 10);
-        task_wakeAfter(schedId, tasks[myId], 10, rc);
+                _pid, myId, 15);
+        task_wakeAfter(schedId, tasks[myId], 15, rc);
         printf("@@@ %d SCALAR wakeAfterRC %d\n",_pid, rc);
-
-        // For each task, if it is stuck in suspension, resume:
-        clearSuspends(myId, schedId);
 
         opCount++;
   od
 
   // ----------------------------------------------
 
-  // Wait for All tasks to finish 
-  /* Debug
-  atomic {
-    printf("Status of Sem %d: %d\n", SEMA_TASK0_FIN, semaList[SEMA_TASK0_FIN].free);
-    printf("Status of Sem %d: %d\n", SEMA_TASK1_FIN, semaList[SEMA_TASK1_FIN].free);
-    printf("Status of Sem %d: %d\n", SEMA_TASK2_FIN, semaList[SEMA_TASK2_FIN].free);
-    printf("Status of Sem %d: %d\n", SEMA_TASK3_FIN, semaList[SEMA_TASK3_FIN].free);
-  }
-  */
-
-  printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
-        _pid, myId, PROC_YIELD);
-  task_wakeAfter(schedId, tasks[myId], PROC_YIELD, rc);
-  printf("@@@ %d SCALAR wakeAfterRC %d\n",_pid, rc);
+  // Clear any remaining blocked tasks
 
   clearSuspends(myId, schedId);
 
-  ObtainSema(tasks[myId], SEMA_TASK0_FIN);
-  ObtainSema(tasks[myId], SEMA_TASK1_FIN);
-  ObtainSema(tasks[myId], SEMA_TASK2_FIN);
-  ObtainSema(tasks[myId], SEMA_TASK3_FIN);
+  printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
+          _pid, myId, PROC_YIELD);
+  task_wakeAfter(schedId, tasks[myId], PROC_YIELD, rc);
+  printf("@@@ %d SCALAR wakeAfterRC %d\n",_pid, rc);
+
+  ObtainSema(schedId, tasks[myId], SEMA_TASK0_FIN);
+  ObtainSema(schedId, tasks[myId], SEMA_TASK1_FIN);
+  ObtainSema(schedId, tasks[myId], SEMA_TASK2_FIN);
+  ObtainSema(schedId, tasks[myId], SEMA_TASK3_FIN);
 
   // ----------------------------------------------
 
@@ -255,15 +242,13 @@ proctype TaskN(byte myId, semaId) {
   byte schedId;
   schedSignal[myId]?schedId;
 
-  ObtainSema(tasks[myId], semaId);
+  ObtainSema(schedId, tasks[myId], semaId);
 
   byte tid, prio, ticks, sid, schId, rc;
-  byte old_prio = 1;
-  printf("@@@ %d DECL byte priority 0\n",_pid);
 
-  atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
+  selectOp(schedId, tid, prio, ticks, schId, rc);
 
-  atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
+  //atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
 
   //atomic{selectOp(schedId, tid, prio, ticks, schId, rc)};
 
@@ -281,6 +266,11 @@ init {
     printf("Setup...\n");
 
     printf("@@@ %d NAME Task_Manager_TestGen\n",_pid)
+
+    printf("@@@ %d DEF TASK_0 %d\n",_pid,1);
+    printf("@@@ %d DEF TASK_1 %d\n",_pid,1);
+    printf("@@@ %d DEF TASK_2 %d\n",_pid,1);
+    printf("@@@ %d DEF TASK_3 %d\n",_pid,1);
 
     outputDefines();
     outputDeclarations();

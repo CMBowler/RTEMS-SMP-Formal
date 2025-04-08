@@ -45,6 +45,7 @@
 #include "config.h"
 #endif
 
+#include <rtems/scheduler.h>
 #include <rtems/score/threadimpl.h>
 
 #include "tr-task-mgr-model.h"
@@ -106,7 +107,7 @@ rtems_mode construct_mode(bool preempt, bool ts, bool asr, int ISR) {
 }
 
 size_t stack_size(int t_size) {
-    return (t_size * TEST_MINIMUM_STACK_SIZE);
+    return (t_size * RTEMS_MINIMUM_STACK_SIZE);
 }
 /*
 rtems_mode mergeMode(bool preempt, bool tSlice, bool asr, int isr)
@@ -176,7 +177,6 @@ void RtemsModelTaskMgr_Teardown_Wrap( void *arg )
   ctx = arg;
   RtemsModelTaskMgr_Teardown( ctx );
 }
-
 
 size_t RtemsModelTaskMgr_Scope( void *arg, char *buf, size_t n )
 {

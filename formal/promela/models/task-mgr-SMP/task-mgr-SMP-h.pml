@@ -1,4 +1,6 @@
-// SMP Helper Functions
+/*
+ SMP Helper Functions
+*/
 
 inline clearSuspends(myId, schedId) {
     byte taskID = 2;
@@ -32,7 +34,7 @@ inline selectPrio(prio) {
   prio = MAX_PRIO;
   if
   ::  prio = LOW_PRIO;
-  //::  prio = MED_PRIO;
+  ::  prio = MED_PRIO;
   ::  prio = HIGH_PRIO;
   fi
 }
@@ -41,7 +43,7 @@ inline selectTime(time) {
   time = 1;
   if
   ::  time = PROC_YIELD;
-  ::  time = 10;
+  ::  time = 5;
   fi
 }
 
@@ -50,14 +52,11 @@ inline selectSched(sId) {
   if
   ::  sId = 0;
   ::  sId = 1;
-  ::  sId = 2;
-  ::  sId = 3;
   fi
 }
 
 mtype {
-  suspend, 
-  resume, 
+  suspRes, 
   setPrio, 
   wakeAfter, 
   setSched
@@ -66,22 +65,26 @@ mtype {
 inline selectOp(schedId, tid, prio, ticks, schId, rc) {
   mtype operation
   if
-  //::  operation = suspend;
-  //::  operation = resume;
-  ::  operation = setPrio;
-  ::  operation = wakeAfter;
-  //::  operation = setSched;
+  ::  myId == 2 -> operation = suspRes;
+  ::  myId == 3 -> operation = setPrio;
+  ::  myId == 4 -> operation = wakeAfter;
+  ::  myId == 5 -> operation = setSched;
+  ::  else
   fi
 
   if
-  ::  operation == suspend ->
+  ::  operation == suspRes ->
+        // suspend
         selectId(tid);
         printf("@@@ %d CALL task_suspend %d suspendRC\n", 
                 _pid, tid);
         task_suspend(myId, schedId, tasks[tid], rc);
-        printf("@@@ %d SCALAR suspendRC %d\n",_pid,rc)
-  ::  operation == resume ->
-        selectId(tid);
+        printf("@@@ %d SCALAR suspendRC %d\n",_pid,rc);
+        // yeild
+        printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
+                _pid, myId, PROC_YIELD);
+        // resume
+        task_wakeAfter(schedId, tasks[myId], PROC_YIELD, rc);
         printf("@@@ %d CALL task_resume %d resumeRC\n", 
                 _pid, tid);
         task_resume(myId, schedId, tasks[tid], rc);
@@ -89,6 +92,8 @@ inline selectOp(schedId, tid, prio, ticks, schId, rc) {
   ::  operation == setPrio ->
         selectId(tid);
         selectPrio(prio);
+        byte old_prio = 1;
+        printf("@@@ %d DECL byte priority 0\n",_pid);
         printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
               _pid, tid, prio, old_prio);
         task_setPrio(myId, schedId, tasks[tid], prio, old_prio, rc);
@@ -104,9 +109,9 @@ inline selectOp(schedId, tid, prio, ticks, schId, rc) {
         selectId(tid);
         selectSched(schId);
         selectPrio(prio);
-        printf("@@@ %d CALL task_setScheduler %d %d %d setSchedRC\n", 
+        printf("@@@ %d CALL task_setScheduler %d %d %d setSchedulerRC\n", 
                 _pid, tid, schId, prio);
         task_setScheduler(myId, schedId, tasks[tid], schId, prio, rc);
-        printf("@@@ %d SCALAR setSchedRC %d\n",_pid,rc);
+        printf("@@@ %d SCALAR setSchedulerRC %d\n",_pid,rc);
   fi
 }

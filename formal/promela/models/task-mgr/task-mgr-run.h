@@ -61,8 +61,6 @@ static void Worker{0}_2( rtems_task_argument arg )
   ctx = (Context *) arg;
   
 #ifdef TASK_2
-
-
     T_log( T_NORMAL, "Worker 2 Running" );
     TestSegment4( ctx );
     T_log( T_NORMAL, "Worker 2 finished" );
@@ -79,14 +77,31 @@ static void Worker{0}_2( rtems_task_argument arg )
 
 }}
 
-/*
-RTEMS_ALIGNED( RTEMS_TASK_STORAGE_ALIGNMENT ) static char WorkerStorage{0}[
-  RTEMS_TASK_STORAGE_SIZE(
-    MAX_TLS_SIZE + TEST_MINIMUM_STACK_SIZE,
-    WORKER_ATTRIBUTES
-  )
-];
-*/
+static void Worker{0}_3( rtems_task_argument arg )
+{{
+
+  T_log( T_NORMAL, "Worker 3 Started" );
+  Context *ctx;
+  rtems_event_set events;
+
+  ctx = (Context *) arg;
+  
+#ifdef TASK_3
+    T_log( T_NORMAL, "Worker 3 Running" );
+    TestSegment5( ctx );
+    T_log( T_NORMAL, "Worker 3 finished" );
+#endif
+
+  // (void) rtems_task_suspend( RTEMS_SELF );
+  // Ensure we hold no semaphores
+  //ReleaseTestSyncSema( ctx->worker0_flag );
+  //ReleaseTestSyncSema( ctx->worker1_flag );
+  //ReleaseTestSyncSema( ctx->worker2_flag );
+  //ReleaseTestSyncSema( ctx->lock_0 );
+  // Wait for events so we don't terminate
+  rtems_event_receive( RTEMS_EVENT_9, RTEMS_DEFAULT_OPTIONS, 0, &events );
+
+}}
 
 static void RtemsModelTaskMgr_Setup{0}(
   RtemsModelTaskMgr_Context *ctx
@@ -101,20 +116,32 @@ static void RtemsModelTaskMgr_Setup{0}(
 
   T_log( T_NORMAL, "Creating Lock 0 TestSync Mutex" );
   ctx->lock_0 = CreateTestSyncMutex( "MTX0" );
+  ReleaseTestSyncSema( ctx->lock_0 );
 
   T_log( T_NORMAL, "Creating Worker0 Flag TestSync Semaphore" );
   ctx->worker0_flag = CreateTestSyncSema( "WKF0" );
+  ReleaseTestSyncSema( ctx->worker0_flag );
   T_log( T_NORMAL, "Creating Worker1  Flag TestSync Semaphore" );
   ctx->worker1_flag = CreateTestSyncSema( "WKF1" );
-  T_log( T_NORMAL, "Creating Worker1  Flag TestSync Semaphore" );
+  ReleaseTestSyncSema( ctx->worker1_flag );
+#ifdef TASK_MGR_SMP
+  T_log( T_NORMAL, "Creating Worker2  Flag TestSync Semaphore" );
   ctx->worker2_flag = CreateTestSyncSema( "WKF2" );
-
+  ReleaseTestSyncSema( ctx->worker2_flag );
+  T_log( T_NORMAL, "Creating Worker3  Flag TestSync Semaphore" );
+  ctx->worker3_flag = CreateTestSyncSema( "WKF3" );
+  ReleaseTestSyncSema( ctx->worker3_flag );
+#endif // TASK_MGR_SMP
   // Add worker to the taskId array:
   tasks[2] = Worker{0}_0;
   tasks[3] = Worker{0}_1;
+#ifdef TASK_MGR_SMP
   tasks[4] = Worker{0}_2;
+  tasks[5] = Worker{0}_3;
+#endif // TASK_MGR_SMP
   
 }}
+
 
 static void RtemsModelTaskMgr_Setup_Wrap{0}( void *arg )
 {{
@@ -136,7 +163,11 @@ static T_fixture RtemsModelTaskMgr_Fixture{0} = {{
 
 static T_fixture_node RtemsModelTaskMgr_Node{0};
 
+#ifdef TASK_MGR_SMP
+void RtemsModelTaskMgrSMP_Run{0}(
+#else
 void RtemsModelTaskMgr_Run{0}(
+#endif // TASK_MGR_SMP
   rtems_status_code ( *t_create )(
                         rtems_name, 
                         rtems_task_priority, 
@@ -169,6 +200,11 @@ void RtemsModelTaskMgr_Run{0}(
                     ),
   rtems_status_code (*t_wakeAfter)(
                         rtems_interval
+                    ),
+  rtems_status_code ( *t_setScheduler )(
+                        rtems_id,
+                        rtems_id,
+                        rtems_task_priority
                     ),
   unsigned int         wait_class,
   int                  waiting_for_event
@@ -205,6 +241,7 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->t_resume = t_resume;
   ctx->t_setPriority = t_setPriority;
   ctx->t_wakeAfter = t_wakeAfter;
+  ctx->t_setScheduler = t_setScheduler;
 
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;

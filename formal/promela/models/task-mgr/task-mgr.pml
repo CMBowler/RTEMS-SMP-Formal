@@ -252,10 +252,10 @@ inline chooseScenario() {
             ::  skip;                       atomic{printf("@@@ %d LOG Start: Lower Task0, Raise Task1",_pid); nl()};
             fi
             // Test Task without Preemption
-            if
-            ::  task_0_preempt = false;     atomic{printf("@@@ %d LOG Start: No Preemption: Task 0",_pid); nl()};
-            ::  skip;
-            fi
+            //if
+            //::  task_0_preempt = false;     atomic{printf("@@@ %d LOG Start: No Preemption: Task 0",_pid); nl()};
+            //::  skip;
+            //fi
     ::  scenario == TaskSleep ->
             // Task Wake After
             sleepTask = true;
@@ -378,7 +378,7 @@ repeat_start:
             // Create and Start New Task (1)
             setTask(tsk1_ID, setRC);
             printf("@@@ %d CALL task_create %d %d %d %d %d %d createRC\n", 
-                    _pid, task_1_name, prio, stackSize, mode, attr, tsk1_ID);
+                    _pid, task_1_name, prio, stackSize, task_1_preempt, attr, tsk1_ID);
             task_create(
               schedId, 
               tasks[tsk1_ID], 
@@ -445,12 +445,12 @@ repeat_start:
     // TODO: Possibly replace with an event receive.
     if 
     ::	startTask0 == true ->
-            ObtainSema(tasks[myId], SEMA_TASK0_FIN);
+            ObtainSema(schedId, tasks[myId], SEMA_TASK0_FIN);
     ::	else
     fi
     if
     ::  startTask1 == true ->
-            ObtainSema(tasks[myId], SEMA_TASK1_FIN);
+            ObtainSema(schedId, tasks[myId], SEMA_TASK1_FIN);
     ::	else
     fi
 
@@ -528,7 +528,7 @@ proctype Task0(byte myId) {
 
         //Do Stuff
 
-        ObtainSema(tasks[myId], SEMA_TASK0_FIN);
+        ObtainSema(schedId, tasks[myId], SEMA_TASK0_FIN);
 
         // Self Suspend:
         if
@@ -571,7 +571,7 @@ proctype Task0(byte myId) {
               if 
               ::  raiseWithMutex == true ->
                     // Obtain Mutex:
-                    ObtainMutex(tasks[myId], SEMA_LOCK);
+                    ObtainMutex(schedId, tasks[myId], SEMA_LOCK);
 
                     // At this point yield the processor over to any Ready Tasks
                     printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
@@ -614,7 +614,7 @@ proctype Task0(byte myId) {
               if 
               ::  raiseWithMutex == true ->
                       // Release Mutex:
-                      ReleaseMutex(tasks[myId], SEMA_LOCK);
+                      ReleaseMutex(schedId, tasks[myId], SEMA_LOCK);
                       // Check Priority
                       changeCheckPriority(
                         myId, 
@@ -652,7 +652,7 @@ proctype Task1(byte myId) {
 
           tasks[myId].pmlid = _pid;
 
-          ObtainSema(tasks[myId], SEMA_TASK1_FIN);
+          ObtainSema(schedId, tasks[myId], SEMA_TASK1_FIN);
           //set_priority(_pid, tasks[myId].prio)
 
           // Priority Changing 
@@ -691,13 +691,13 @@ proctype Task1(byte myId) {
                   byte setPriorityRC;
                   byte old_prio = 1;
                   // Obtain Mutex:
-                  ObtainMutex(tasks[myId], SEMA_LOCK);
+                  ObtainMutex(schedId, tasks[myId], SEMA_LOCK);
 
                   // Check Priority
                   //(taskId, CURRENT_PRIO, old_prio, setPriorityRC);
 
                   // Release Mutex:
-                  ReleaseMutex(tasks[myId], SEMA_LOCK);
+                  ReleaseMutex(schedId, tasks[myId], SEMA_LOCK);
           ::  resumeSleep == true -> 
                   // Call resume on Task 0: 
                   printf("@@@ %d CALL task_resume %d resumeRC\n", 

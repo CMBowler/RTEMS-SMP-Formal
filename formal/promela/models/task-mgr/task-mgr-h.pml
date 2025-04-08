@@ -62,6 +62,7 @@ inline outputDefines () {
     printf("@@@ %d DEF TASK_MAX %d\n",_pid,TASK_MAX);
     printf("@@@ %d DEF INVALID_ID %d\n",_pid,INVALID_ID);
     printf("@@@ %d DEF SEMA_MAX %d\n",_pid,SEMA_MAX);
+    printf("@@@ %d DEF MAX_PROC %d\n", _pid, NUM_PROC);
 
     // Priority inversion
     printf("@@@ %d DEF LOW_PRIO %d\n",_pid,HIGH_PRIO);
@@ -84,13 +85,12 @@ inline outputDeclarations () {
     printf("@@@ %d DECL byte resumeRC 0\n",_pid);
     printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
     printf("@@@ %d DECL byte wakeAfterRC 0\n", _pid);
-    // Rather than refine an entire Task array, we refine array 'slices'
-    //printf("@@@ %d DCLARRAY EvtSet pending TASK_MAX\n",_pid);
-    //printf("@@@ %d DCLARRAY byte recout TASK_MAX\n",_pid);
+    printf("@@@ %d DECL byte setSchedulerRC 0\n", _pid);
     printf("@@@ %d DECL byte globalCounter 0\n", _pid);
     printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
     printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);
     printf("@@@ %d DCLARRAY Semaphore semaphore SEMA_MAX\n",_pid);
+    printf("@@@ %d DCLARRAY Scheduler scheduler MAX_PROC\n", _pid);
 }
 
 typedef Mode {
@@ -214,8 +214,10 @@ inline isHoldingMutex(task) {
 }
 
 inline schedSync(taskId, schedId) {
+    //printf("T %d Signalling S %d", taskId, schedId);
     taskSignal[schedId]!0;
     schedSignal[taskId]?schedId;
+    //printf("T %d Awoken by S %d", taskId, schedId);
 }
 
 inline UpdateCount() {
@@ -225,35 +227,35 @@ inline UpdateCount() {
     }
 }
 
-inline ObtainSema(task, sid) {
+inline ObtainSema(schedID, task, sid) {
   atomic {
     printf("@@@ %d WAIT %d\n",_pid,sid);
     if
     ::  semaList[sid].free == true ->
             semaList[sid].free = false;
     ::  else ->
-            insertQueue(
-              semaList[sid],
-              TASK_MAX,
-              task.tid
-            )
-            // Store preblocked state if required
-            // and add SemaBlock state
-            if
-            ::  task.state != Blocked -> // Executing/Ready/Dormant
-                  if
-                  ::  task.state == Executing -> // Self suspend
-                        task.preBlockState = Ready;
-                  ::  else ->
-                        task.preBlockState = task.state;
-                  fi
-                  task.state = Blocked;
-            ::  else
-            fi
-            task.SemaBlock = true; 
+          insertQueue(
+            semaList[sid],
+            TASK_MAX,
+            task.tid
+          )
+          // Store preblocked state if required
+          // and add SemaBlock state
+          if
+          ::  task.state != Blocked -> // Executing/Ready/Dormant
+                if
+                ::  task.state == Executing -> // Self suspend
+                      task.preBlockState = Ready;
+                ::  else ->
+                      task.preBlockState = task.state;
+                fi
+                task.state = Blocked;
+          ::  else
+          fi
+          task.SemaBlock = true; 
+          schedSync(task.tid, schedID);
     fi
   }
-  schedSync(task.tid, task.homeSched);
   printf("@@@ %d LOG WAIT %d Over\n",_pid,sid);
 }
 
@@ -265,15 +267,15 @@ inline ReleaseSema(task, sid) {
   //schedSync(task.tid, task.homeSched);
 }
 
-inline ObtainMutex(task, sid) {
+inline ObtainMutex(schedID, task, sid) {
   atomic {
-    ObtainSema(task, sid)
+    ObtainSema(schedID, task, sid)
     task.mutexs[sid] = 1;
     task.HoldingMutex = true;
   }
 }
 
-inline ReleaseMutex(task, sid) { 
+inline ReleaseMutex(schedID, task, sid) { 
   bool rc; // TODO 
   atomic {
     if
@@ -296,33 +298,40 @@ inline ReleaseMutex(task, sid) {
     ::  else -> rc = false
     fi
   }
-  schedSync(task.tid, task.homeSched);
+  schedSync(task.tid, schedID);
 }
 
 inline insertSchedQ(newTask, sid) {
   byte i=0;
   byte insertIndex;
+  bool inserted = false;
 
   do
-  ::  schedList[sid].taskQueue[i] == 0 || 
-      tasks[schedList[sid].taskQueue[i]].prio > newTask.prio ->
-        insertIndex = i;
-        i = TASK_MAX-2;           
+  ::  i >= TASK_MAX -> break;
+  ::  else ->
+        if
+        ::  schedList[sid].taskQueue[i] == 0 || 
+            tasks[schedList[sid].taskQueue[i]].prio > newTask.prio ->
+              insertIndex = i;     
+              inserted = true;     
+              break;
+        ::  else
+        fi
+        i++;
+  od
+
+  if
+  ::  inserted == true -> 
+        i = TASK_MAX-1;
         do
-        ::  i == insertIndex -> break;
+        ::  i <= insertIndex -> break;
         ::  else ->
               schedList[sid].taskQueue[i] = schedList[sid].taskQueue[i-1];
               i--;
         od
-        schedList[sid].taskQueue[i] = newTask.tid;
-        break;
-  ::  else -> 
-        i++; 
-        if 
-        ::  i == TASK_MAX -> break;
-        ::  else -> skip;
-        fi
-  od
+        schedList[sid].taskQueue[insertIndex] = newTask.tid;
+  ::  else 
+  fi
 
   /* Debug : print schedQ
   i = 0;
@@ -339,22 +348,34 @@ inline insertSchedQ(newTask, sid) {
 
 inline removeSchedQ(task, sid) {
   byte i=0;
+  bool removed = false;
   // Remove task from relevant Scheduler Queue
   do
-  ::  schedList[sid].taskQueue[i] == task.tid ->
-        do
-        ::  i == TASK_MAX-2 -> break;
-        ::  else ->
-              schedList[sid].taskQueue[i] = schedList[sid].taskQueue[i+1];
-              i++;
-        od
-  ::  else -> 
-        i++;
-        if 
-        ::  i == TASK_MAX -> break;
+  ::  i >= TASK_MAX -> break;
+  ::  else ->
+        if
+        ::  schedList[sid].taskQueue[i] == task.tid ->
+              schedList[sid].taskQueue[i] = 0; // Required
+              removed = true;
+              break;
         ::  else
         fi
+        i++;
   od
+
+  if 
+  ::  removed == true ->
+        do
+        ::  i >= TASK_MAX-2 -> break;
+        ::  else ->
+             schedList[sid].taskQueue[i] = schedList[sid].taskQueue[i+1];
+             i++;
+        od
+        schedList[sid].taskQueue[i] = 0;
+  ::  else
+  fi
+
+
 
   /* Debug : print schedQ
   i = 0;
