@@ -3,3 +3,4 @@ tr-model-events-mgr-*.c
 pan*
 gen/*
 state-maps/*
+conv/*
