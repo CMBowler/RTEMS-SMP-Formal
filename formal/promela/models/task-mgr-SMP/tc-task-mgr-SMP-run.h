@@ -11,8 +11,10 @@ T_TEST_CASE( RtemsModelTaskMgrSMP{0} )
     IsTaskSuspended,
     TaskResume,
     TaskSetPriority,
+    TaskGetPriority,
     TaskWakeAfter,
     TaskSetScheduler,
+    TaskGetScheduler,
     THREAD_WAIT_CLASS_EVENT,
     STATES_WAITING_FOR_EVENT
   );

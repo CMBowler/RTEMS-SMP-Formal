@@ -84,8 +84,10 @@ inline outputDeclarations () {
     printf("@@@ %d DECL byte isSuspendRC 0\n",_pid);
     printf("@@@ %d DECL byte resumeRC 0\n",_pid);
     printf("@@@ %d DECL byte setPriorityRC 0\n",_pid);
+    printf("@@@ %d DECL byte getPriorityRC 0\n",_pid);
     printf("@@@ %d DECL byte wakeAfterRC 0\n", _pid);
     printf("@@@ %d DECL byte setSchedulerRC 0\n", _pid);
+    printf("@@@ %d DECL byte getSchedulerRC 0\n", _pid);
     printf("@@@ %d DECL byte globalCounter 0\n", _pid);
     printf("@@@ %d DCLARRAY byte taskID TASK_MAX\n", _pid);
     printf("@@@ %d DCLARRAY Task tasks TASK_MAX\n",_pid);

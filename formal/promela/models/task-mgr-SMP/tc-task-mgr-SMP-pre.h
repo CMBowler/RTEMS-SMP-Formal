@@ -147,6 +147,19 @@ static rtems_status_code TaskSetPriority(
     );
 }
 
+static rtems_status_code TaskGetPriority(
+    rtems_id             task_id,
+    rtems_id             scheduler_id,
+    rtems_task_priority *priority
+)
+{
+    return rtems_task_get_priority(
+        task_id, 
+        scheduler_id, 
+        priority
+    );
+}
+
 static rtems_status_code TaskWakeAfter(
     rtems_interval interval
 )
@@ -164,5 +177,16 @@ static rtems_status_code TaskSetScheduler(
         task_id,
         scheduler_id,
         priority
+    );
+}
+
+static rtems_status_code TaskGetScheduler(
+    rtems_id  task_id,
+    rtems_id *scheduler_id
+)
+{
+    return rtems_task_get_scheduler(
+        task_id,
+        scheduler_id
     );
 }

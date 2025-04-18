@@ -101,6 +101,11 @@ typedef struct {
                         rtems_task_priority,
                         rtems_task_priority *
                     );
+    rtems_status_code ( *t_getPriority )(
+                        rtems_id,
+                        rtems_id,
+                        rtems_task_priority *
+                    );
     // copy of the corresponding RtemsModelTaskMgr_Run() parameter
     rtems_status_code ( *t_wakeAfter )(
                         rtems_interval
@@ -109,6 +114,10 @@ typedef struct {
                         rtems_id,
                         rtems_id,
                         rtems_task_priority
+                    );
+    rtems_status_code ( *t_getScheduler )(
+                        rtems_id,
+                        rtems_id *
                     );
     unsigned int wait_class; // copy of the corresponding
                             // RtemsModelTaskMgr_Run() parameter

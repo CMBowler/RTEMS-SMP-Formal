@@ -66,31 +66,19 @@ inline task_create(schedId, task, id, name, prio, preempt, tidRC, rc) {
 inline task_start(callerId, schedId, task, entry, rc) {
   atomic {
     if
-    ::  task.tid == INVALID_ID ->
-          //printf("@@@ %d LOG Start NULL out.\n",_pid);
+    ::  task.state == Zombie ->
           rc = RC_InvId;
-    :: 	else ->
+    ::  else ->
           if 
           ::  entry == 0 -> 
                 rc = RC_InvAddr;
           ::  else ->
                 if
-                ::  task.state == Dormant ->
+                ::  task.state == Dormant || Blocked ->
                       task.state = Ready;
                       task.start = entry;
                       rc = RC_OK;
-                ::  task.state == Blocked -> 
-                      /*
-                        In the case a task has been suspended 
-                        before it is started, the state cannot
-                        be set to ready, as this over-writes 
-                        the blocked state, instead we can set
-                        the tasks 'preBlockState' to ready.
-                      */
-                      task.preBlockState = Ready;
-                      task.start = entry;
-                      rc = RC_OK;
-                :: 	else ->
+                ::  else ->
                       rc = RC_IncState;
                 fi
           fi
@@ -355,7 +343,7 @@ inline task_setPrio(callerId, schedId, task, new, old, rc) {
           ::  else ->
                 task.prio = new;
                 if
-                ::  new < old && task.HoldingMutex -> 
+                ::  new > old && task.HoldingMutex -> 
                       /*
                       If the task is currently holding any 
                       binary semaphores which use a locking protocol, 
@@ -376,10 +364,11 @@ inline task_setPrio(callerId, schedId, task, new, old, rc) {
   fi
 }
 
-/*
-inline task_getPrio(task, sched, prio, rc) {
+
+inline task_getPrio(task, sched, currPrio, rc) {
+  atomic {
     if
-    ::  prio == 0 ->
+    ::  currPrio == 0 ->
             rc = RC_InvAddr
     ::  else ->
             if
@@ -387,12 +376,22 @@ inline task_getPrio(task, sched, prio, rc) {
                     rc = RC_InvId
             ::  else ->
                     if
-                    ::  sched.state == Zombie ->
+                    ::  sched > NUM_PROC ->
                             rc = RC_InvId
                     ::  else ->
-
+                          if
+                          ::  sched != task.homeSched ->
+                                rc = RC_NotDefd;
+                          ::  else ->
+                                currPrio = task.prio;
+                                rc = RC_OK;
+                          fi
+                    fi
+            fi
+    fi
+  }
 }
-*/
+
 
 /*
  * task_wakeAfter(ticks, rc)
@@ -449,18 +448,18 @@ inline task_wakeAfter(schedId, task, time, rc) {
   rc = RC_OK;
 }
 
-inline task_getScheduler(task, scheduler, rc) {
+inline task_getScheduler(task, hSched, rc) {
   // return the home scheduler of the task
   atomic {
     if
-    ::  scheduler == 0 ->
+    ::  hSched == 0 ->
           rc = RC_InvAddr;
     ::  else -> 
           if
-          ::  task.state = Zombie ->
+          ::  task.state == Zombie ->
                 rc = RC_InvId;
           ::  else -> 
-                scheduler = task.homeSched;
+                hSched = task.homeSched;
                 rc = RC_OK;
           fi
     fi

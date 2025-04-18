@@ -300,7 +300,7 @@ def copy(model_root, model_path, codedir, rtems, modfile, testsuite_name,
 def compile(rtems_dir):
     cwd = os.getcwd()
     os.chdir(rtems_dir)
-    subprocess.run("./waf configure", check=True, shell=True)
+    subprocess.run("./waf configure --prefix=$HOME/work/rtems/6", check=True, shell=True)
     subprocess.run("./waf", check=True, shell=True)
     os.chdir(cwd)
 

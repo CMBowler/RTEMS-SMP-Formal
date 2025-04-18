@@ -198,6 +198,11 @@ void RtemsModelTaskMgr_Run{0}(
                         rtems_task_priority,
                         rtems_task_priority *
                     ),
+  rtems_status_code ( *t_getPriority )(
+                        rtems_id,
+                        rtems_id,
+                        rtems_task_priority *
+                    ),
   rtems_status_code (*t_wakeAfter)(
                         rtems_interval
                     ),
@@ -205,6 +210,10 @@ void RtemsModelTaskMgr_Run{0}(
                         rtems_id,
                         rtems_id,
                         rtems_task_priority
+                    ),
+  rtems_status_code ( *t_getScheduler )(
+                        rtems_id,
+                        rtems_id *
                     ),
   unsigned int         wait_class,
   int                  waiting_for_event
@@ -240,8 +249,10 @@ void RtemsModelTaskMgr_Run{0}(
   ctx->t_isSuspend = t_isSuspend;
   ctx->t_resume = t_resume;
   ctx->t_setPriority = t_setPriority;
+  ctx->t_getPriority = t_getPriority;
   ctx->t_wakeAfter = t_wakeAfter;
   ctx->t_setScheduler = t_setScheduler;
+  ctx->t_getScheduler = t_getScheduler;
 
   ctx->wait_class = wait_class;
   ctx->waiting_for_event = waiting_for_event;

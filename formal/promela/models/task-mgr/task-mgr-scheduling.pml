@@ -101,9 +101,6 @@ inline taskSelect(schedID, prevRanTask, TimeSliceCounter) {
                   is in the state: Ready 
                 */
 
-                //printf("@@@ %d LOG : Scheduling Task %d to Run\n", 
-                //        _pid, taskId);
-
                 /* Time Slicing */
                 
                 if
@@ -205,14 +202,12 @@ proctype Scheduler(byte schedID) {
 
   printf("@@@ %d LOG System running...\n",_pid);
 
-  byte maxCount = 0;
   prevRanTask = 0;
   TimeSliceCounter = 0;
 
   do
-  ::  liveSeen == false || maxCount > 100 -> break;
+  ::  liveSeen == false -> break;
   ::  else ->
-        //printf("@@@ %d LOG Loop through tasks...\n",_pid);
 
         /* 
           Check for any Semaphores
@@ -229,8 +224,6 @@ proctype Scheduler(byte schedID) {
         /* Clock */
 
         clockTick(liveSeen);
-
-        maxCount++
   od
 
   printf("@@@ %d LOG All are Zombies, game over.\n",_pid);
@@ -241,14 +234,10 @@ proctype MultiScheduler(byte schedID) {
     byte prevRanTask, TimeSliceCounter;
     bool liveSeen;
 
-    byte maxCount = 0; // DEBUG
-
     atomic{printf("@@@ %d LOG Scheduler running...\n",_pid)};
 
     prevRanTask = 0;
     TimeSliceCounter = 0;
-
-    //printf("@@@ %d LOG Loop through tasks...\n",_pid);
 
     byte clkMsg;
 
@@ -279,14 +268,11 @@ proctype MultiClock() {
 
   bool liveSeen = true;
 
-  int debugCount = 0;
-
   do
-  ::  liveSeen == false || debugCount > 300 -> break;
+  ::  liveSeen == false -> break;
   ::  else ->
 
         //printf(" (tick) \n");
-        debugCount++;
 
         /* 
           Check for any Semaphores

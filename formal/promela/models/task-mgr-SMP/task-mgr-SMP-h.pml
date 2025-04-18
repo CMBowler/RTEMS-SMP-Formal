@@ -13,7 +13,6 @@ inline clearSuspends(myId, schedId) {
                 printf("@@@ %d CALL task_resume %d resumeRC\n", 
                         _pid, taskID);
                 task_resume(myId, schedId, tasks[taskID], rc);
-                printf("@@@ %d SCALAR resumeRC %d\n",_pid,rc);
           ::  else
           fi
           taskID++;
@@ -94,11 +93,18 @@ inline selectOp(schedId, tid, prio, ticks, schId, rc) {
         selectPrio(prio);
         byte old_prio = 1;
         printf("@@@ %d DECL byte priority 0\n",_pid);
+
         printf("@@@ %d CALL task_setPriority %d %d %d setPriorityRC\n", 
-              _pid, tid, prio, old_prio);
+               _pid, tid, prio, old_prio);
         task_setPrio(myId, schedId, tasks[tid], prio, old_prio, rc);
         printf("@@@ %d CALL oldPrio %d\n",_pid, old_prio);
-        printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc)
+        printf("@@@ %d SCALAR setPriorityRC %d\n",_pid,rc);
+
+        printf("@@@ %d CALL task_getPriority %d %d %d getPriorityRC\n", 
+               _pid, tid, tasks[tid].homeSched, prio, old_prio);
+        task_getPrio(tasks[tid], tasks[tid].homeSched, old_prio, rc);
+        printf("@@@ %d SCALAR getPriorityRC %d\n",_pid,rc)
+        printf("@@@ %d CALL oldPrio %d\n",_pid, old_prio);
   ::  operation == wakeAfter ->
         selectTime(ticks)
         printf("@@@ %d CALL task_wakeAfter %d %d wakeAfterRC\n", 
@@ -109,9 +115,20 @@ inline selectOp(schedId, tid, prio, ticks, schId, rc) {
         selectId(tid);
         selectSched(schId);
         selectPrio(prio);
+
+        byte currScheduler=1;
+        printf("@@@ %d DECL byte schedId 0\n",_pid);
+
         printf("@@@ %d CALL task_setScheduler %d %d %d setSchedulerRC\n", 
                 _pid, tid, schId, prio);
         task_setScheduler(myId, schedId, tasks[tid], schId, prio, rc);
         printf("@@@ %d SCALAR setSchedulerRC %d\n",_pid,rc);
+
+        printf("@@@ %d CALL task_getScheduler %d %d getSchedulerRC\n", 
+                _pid, tid, currScheduler);
+        task_getScheduler(tasks[tid], currScheduler, rc);
+        printf("@@@ %d SCALAR getSchedulerRC %d\n",_pid,rc);
+        printf("@@@ %d CALL schedId %d\n",_pid, currScheduler);
+
   fi
 }

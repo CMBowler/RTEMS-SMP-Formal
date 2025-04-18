@@ -785,7 +785,7 @@ init {
     ::  else
     fi
 
-    TestSyncRelease(SEMA_LOCK);
+    //TestSyncRelease(SEMA_LOCK);
     TestSyncRelease(SEMA_TASK0_FIN);
     TestSyncRelease(SEMA_TASK1_FIN);
 

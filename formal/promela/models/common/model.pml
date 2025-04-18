@@ -14,6 +14,10 @@
 
 inline nl() { printf("\n") } // Useful shorthand
 
+#ifndef  NUM_PROC
+#define NUM_PROC 1
+#endif
+
  /*
  *  Common Task Definition
  *
